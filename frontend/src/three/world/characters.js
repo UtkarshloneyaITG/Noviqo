@@ -79,7 +79,7 @@ export function poseStanding(root) {
  *  forward axis, toward the body. Call while the model is unrotated. */
 function curlFingers(hand, side) {
   hand.traverse((o) => {
-    if (o.isBone && o !== hand) turnBone(o, Z, -side * (/^thumb/i.test(o.name) ? 0.12 : 0.24))
+    if (o.isBone && o !== hand) turnBone(o, Z, -side * (/^thumb/i.test(o.name) ? 0.1 : 0.2))
   })
 }
 

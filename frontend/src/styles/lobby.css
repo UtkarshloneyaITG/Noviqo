@@ -30,7 +30,8 @@
 :where(.lb, .lb-tag) :where(button, input) { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
 .lb button:disabled { cursor: default; }
 .lb :focus-visible, .lb-tag :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.lb-ic { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lb-ic { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.lb-ic .f { fill: currentColor; fill-opacity: .22; }
 
 /* No backdrop-filter: blurring a live WebGL canvas behind a dozen panels costs a re-blur every frame. */
 .lb-panel { background: var(--panel); border: 1px solid var(--line); clip-path: var(--cut); }
@@ -101,8 +102,11 @@
   white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
 .lb .lb-start:disabled { filter: saturate(.35) brightness(.72); }
 .lb-start:disabled::after { display: none; }
-.lb .lb-start--on { background: linear-gradient(180deg, #9dffd2, var(--green) 50%, #17b877); color: #03281a; }
-.lb-start--on small { color: rgba(3,40,26,.8); }
+/* Ready pressed: the button becomes a quiet "Cancel" (no sheen) until the leader starts. */
+.lb .lb-start--cancel { background: linear-gradient(180deg, #2b3459, #1b2246 55%, #151b3a); color: var(--text); box-shadow: inset 0 0 0 1.5px rgba(255,197,61,.45);
+  font-size: 48px; letter-spacing: .04em; text-shadow: none; }
+.lb-start--cancel small { color: var(--muted); }
+.lb-start--cancel::after { display: none; }
 
 .lb-mode { padding: 10px; display: flex; flex-direction: column; gap: 9px; }
 .lb-mode .mrow { display: flex; align-items: center; gap: 12px; }
@@ -177,7 +181,7 @@
 /* ── dock (bottom right) ── */
 .lb-dock { right: 24px; bottom: 22px; display: flex; gap: 8px; }
 .lb-dk { position: relative; width: 118px; height: 82px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
-.lb-dk .lb-ic { width: 30px; height: 30px; color: var(--cyan); stroke-width: 1.6; }
+.lb-dk .lb-ic { width: 30px; height: 30px; color: var(--cyan); stroke-width: 1.9; }
 .lb-dk b { font: 800 19px/1 var(--display); letter-spacing: .04em; }
 .tagnew { position: absolute; top: 6px; right: 6px; padding: 1px 6px; font-size: 10px; font-weight: 800; background: var(--red); color: #fff; clip-path: var(--cut-s); }
 
@@ -301,13 +305,15 @@
 .lb-signout { align-self: flex-start; }
 
 .lb-games { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.lb .lb-game { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 10px; background: rgba(255,255,255,.04); border: 1px solid transparent; clip-path: var(--cut); }
+.lb .lb-game { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 18px 10px; background: rgba(255,255,255,.04); border: 1px solid transparent; clip-path: var(--cut); }
 .lb .lb-game.act { border-color: rgba(79,216,255,.6); background: rgba(79,216,255,.1); }
 .lb-game b { font: 900 26px/1 var(--display); letter-spacing: .04em; }
 .lb-game small { font-size: 12.5px; color: var(--muted); }
 .lb-game.act small { color: var(--cyan); }
 .lb-game:disabled { opacity: .6; }
 .lb-game .soon { width: 64px; height: 64px; display: grid; place-items: center; font: 900 34px/1 var(--display); color: var(--muted); border: 1.5px dashed rgba(142,155,192,.5); border-radius: 50%; }
+.lb-gart { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; clip-path: var(--cut-s); }
+.lb-gart text { font-family: var(--display); font-weight: 900; }
 
 @media (prefers-reduced-motion: reduce) {
   .lb *, .lb *::before, .lb *::after, .lb-tag, .lb-tag * { animation: none !important; transition: none !important; }
@@ -332,3 +338,27 @@
   100% { opacity: 0; transform: translate(-50%, -10px); }
 }
 @media (prefers-reduced-motion: reduce) { .lb-emote-pop { transform: translateX(-50%); } } /* animation is off there (rule above) */
+
+/* ── Leaderboard ─────────────────────────────────────────────────────── */
+.lb-lead-tabs { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; margin-bottom: 12px; }
+.lb-lead { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; max-height: min(52vh, 460px); overflow-y: auto; }
+.lb-lead li { display: grid; grid-template-columns: 34px 40px 1fr auto 92px; align-items: center; gap: 12px; padding: 6px 12px; background: rgba(255,255,255,.035); clip-path: var(--cut-s); }
+.lb-lead li .lb-av { width: 40px; height: 40px; }
+.lb-lead .pl { font: 800 20px/1 var(--display); color: var(--muted); text-align: center; }
+.lb-lead li:nth-child(1) .pl { color: #f1bd3f; }
+.lb-lead li:nth-child(2) .pl { color: #c9d2e3; }
+.lb-lead li:nth-child(3) .pl { color: #d08a52; }
+.lb-lead .who { display: flex; flex-direction: column; min-width: 0; }
+.lb-lead .who b, .lb-lead .who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-lead .who small { color: var(--muted); font-size: 12px; }
+.lb-lead .rk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.lb-lead .val { font: 800 18px/1 var(--display); text-align: right; letter-spacing: .03em; }
+.lb-lead li.me { background: rgba(255,197,61,.12); box-shadow: inset 3px 0 0 var(--amber); }
+.lb-lead--me { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); max-height: none; }
+.lb-lead--me li:nth-child(1) .pl { color: var(--muted); }
+
+/* Phones held sideways (≈390 px tall): the HUD is at its 0.6 zoom floor and
+   the goal banner would sit under the chat, so it goes (Ranks/Milestones show the same). */
+@media (max-height: 500px) {
+  .lb-banner { display: none; }
+}

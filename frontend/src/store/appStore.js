@@ -53,6 +53,7 @@ const ACCOUNT_STATE = {
   pchat: [],
   emotes: {},       // lobby emote last played by each party member: id -> { id: emote, at: performance.now() }
   newItems: [],     // item ids unlocked by recent games, until Inventory is opened
+  leaderboard: null, // last 'leaderboard' reply: { board, scope, rows, me }
   panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|invite|games
   playerId: null,
   roomId: null,
@@ -186,6 +187,11 @@ export const useAppStore = create((set, get) => ({
 
       case 'profile': {
         set({ profile: message.profile, playerId: message.profile?.id ?? get().playerId })
+        break
+      }
+
+      case 'leaderboard': {
+        set({ leaderboard: { board: message.board, scope: message.scope, rows: message.rows || [], me: message.me } })
         break
       }
 

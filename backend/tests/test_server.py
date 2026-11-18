@@ -301,6 +301,17 @@ def test_look_needs_a_game(client):
         assert "not in a game" in recv(a, "error")["message"]
 
 
+# ── leaderboard ──────────────────────────────────────────────────────────
+
+def test_leaderboard_reply_includes_your_own_row(client):
+    with client.websocket_connect("/ws") as ws:
+        aid, _, _ = signup(ws)
+        ws.send_json({"type": "leaderboard", "board": "wins", "scope": "friends"})
+        msg = recv(ws, "leaderboard")
+        assert (msg["board"], msg["scope"], msg["me"]["id"]) == ("wins", "friends", aid)
+        assert [r["id"] for r in msg["rows"]] == [aid]
+
+
 # ── chat ─────────────────────────────────────────────────────────────────
 
 def test_global_chat_reaches_everyone_and_is_replayed(client):

@@ -1,0 +1,162 @@
+/* The documentation page shown until the app is unlocked (components/PythonDocs.jsx).
+   Self-contained: index.css's global reset zeroes margins and strips buttons,
+   so every spacing and control style the page needs is set here. */
+
+.pydocs {
+  all: initial;
+  --bg: #fff; --fg: #222; --muted: #646464; --line: #d8d8d8; --bar: #f8f8f8;
+  --link: #0072aa; --hover: #00b0e4; --code: #ecf0f3; --pre: #eeffcc; --pre-line: #ac9;
+  --sig: #f3f5f7; --accent: #3776ab; --changed: #e0a030;
+  --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  display: block; min-height: 100vh; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.pydocs[data-theme="dark"] {
+  --bg: #1f1f1f; --fg: #e4e4e4; --muted: #a6a6a6; --line: #3c3c3c; --bar: #262626;
+  --link: #67b4e0; --hover: #a4d6f2; --code: #333; --pre: #2a2d26; --pre-line: #4a5240;
+  --sig: #292c30; --accent: #67b4e0; --changed: #c99a3c;
+  color-scheme: dark;
+}
+.pydocs *, .pydocs *::before, .pydocs *::after { box-sizing: border-box; }
+.pydocs a { color: var(--link); text-decoration: none; }
+.pydocs a:hover { color: var(--hover); text-decoration: underline; }
+.pydocs button, .pydocs input, .pydocs select { font: inherit; color: inherit; }
+.pydocs :focus-visible { outline: 2px solid var(--hover); outline-offset: 2px; }
+.pydocs [id] { scroll-margin-top: 64px; }
+.pydocs code, .pydocs pre { font-family: var(--mono); }
+
+/* ── header bar ── */
+.pydocs-header {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+  min-height: 50px; padding: 7px 16px; background: var(--bar); border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.pydocs .pydocs-brand { font-size: 19px; font-weight: 700; color: var(--accent); letter-spacing: -.01em; }
+.pydocs .pydocs-brand:hover { text-decoration: none; color: var(--accent); }
+.pydocs-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; color: var(--muted); }
+.pydocs-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.pydocs .pydocs-select {
+  height: 30px; padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); cursor: pointer;
+}
+.pydocs-select-label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.pydocs-search { display: flex; }
+.pydocs .pydocs-search input {
+  width: 190px; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-right: 0;
+  border-radius: 4px 0 0 4px; background: var(--bg); outline-offset: -2px;
+}
+.pydocs .pydocs-search button {
+  height: 30px; padding: 0 11px; border: 1px solid var(--line); border-radius: 0 4px 4px 0; background: var(--bar); cursor: pointer;
+}
+.pydocs .pydocs-search button:hover { background: var(--code); }
+.pydocs .pydocs-menu { display: none; }
+.pydocs-scrim { display: none; }
+
+/* ── layout: sidebar + content ── */
+.pydocs-layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); max-width: 1220px; margin: 0 auto; }
+.pydocs-sidebar {
+  position: sticky; top: 51px; align-self: start; max-height: calc(100vh - 51px); overflow-y: auto;
+  padding: 8px 18px 32px; font-size: 14px; line-height: 1.45; border-right: 1px solid var(--line);
+}
+.pydocs-sidebar h3 { margin: 22px 0 8px; font-size: 15px; font-weight: 700; }
+.pydocs-sidebar ul { margin: 0; padding: 0; list-style: none; }
+.pydocs-sidebar ul ul { margin: 4px 0 0 14px; }
+.pydocs-sidebar li { margin: 4px 0; }
+.pydocs-sidebar p { margin: 0; }
+.pydocs-sidebar code { font-size: 13px; }
+.pydocs-drawer-tools { display: none; }
+
+.pydocs-main { min-width: 0; max-width: 900px; padding: 26px 44px 56px; }
+.pydocs-main h1 { margin: 0 0 18px; font-size: 32px; line-height: 1.2; font-weight: 600; }
+.pydocs-main p { margin: 0 0 12px; }
+.pydocs-main em { font-style: italic; }
+.pydocs-c { padding: 1px 4px; border-radius: 3px; background: var(--code); font-size: .88em; overflow-wrap: anywhere; }
+.pydocs-permalink { margin-left: 6px; font-size: .8em; color: var(--muted); visibility: hidden; }
+.pydocs-main h1:hover .pydocs-permalink, .pydocs-sig:hover .pydocs-permalink, .pydocs-permalink:focus-visible { visibility: visible; }
+
+/* function index */
+.pydocs-results { margin: 16px 0 0; color: var(--muted); font-size: 14px; }
+.pydocs-index {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); margin: 12px 0 30px; padding: 10px 0;
+  list-style: none; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.pydocs-index a { display: block; padding: 3px 8px; font: 14px/1.6 var(--mono); }
+
+/* entries (Sphinx-style dl/dt/dd) */
+.pydocs-entry { margin: 0; padding: 20px 0 4px; border-top: 1px solid var(--line); }
+.pydocs-sig {
+  margin: 0 0 10px; padding: 6px 12px; background: var(--sig); border-left: 3px solid var(--accent);
+  font: 15px/1.5 var(--mono); overflow-wrap: anywhere;
+}
+.pydocs-sig + .pydocs-sig { margin-top: -6px; }
+.pydocs-sig b { font-weight: 700; }
+.pydocs-sig .p { font-style: italic; }
+.pydocs-sig .d { color: var(--muted); }
+.pydocs-entry dd { margin: 0 0 0 26px; }
+.pydocs-changed { margin: 6px 0 14px; padding: 2px 0 2px 12px; border-left: 3px solid var(--changed); }
+.pydocs-impl { margin: 6px 0 14px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 4px; }
+
+/* code blocks */
+.pydocs-pre { position: relative; margin: 8px 0 14px; border: 1px solid var(--pre-line); border-radius: 3px; background: var(--pre); }
+.pydocs-pre pre { margin: 0; padding: 10px 14px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; white-space: pre; }
+.pydocs .pydocs-copy {
+  position: absolute; top: 6px; right: 6px; padding: 1px 8px; font-size: 12px; color: var(--muted);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; opacity: 0; transition: opacity .15s;
+}
+.pydocs-pre:hover .pydocs-copy, .pydocs .pydocs-copy:focus-visible { opacity: 1; }
+
+/* previous / next */
+.pydocs-pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.pydocs-pager a:last-child { text-align: right; }
+.pydocs-pager small { display: block; color: var(--muted); }
+
+/* ── footer: slides open once the reader reaches the end ── */
+.pydocs-footer { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .45s ease; background: var(--bar); color: var(--muted); font-size: 13px; }
+.pydocs-footer--visible { grid-template-rows: 1fr; border-top: 1px solid var(--line); }
+.pydocs-footer-clip { min-height: 0; overflow: hidden; }
+.pydocs-footer-row {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 24px;
+  max-width: 1220px; margin: 0 auto; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+}
+.pydocs-secret-form { display: flex; gap: 6px; flex: 0 1 360px; }
+.pydocs .pydocs-secret-input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 10px; font-size: 14px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg);
+}
+.pydocs .pydocs-secret-btn { height: 36px; padding: 0 16px; border-radius: 4px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+.pydocs .pydocs-secret-btn:hover { filter: brightness(1.1); }
+@keyframes pydocs-shake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(8px); } 60% { transform: translateX(-6px); } 80% { transform: translateX(6px); } }
+.pydocs-secret-form--shake { animation: pydocs-shake .5s ease; }
+
+/* ── phones and small tablets: the sidebar becomes a slide-in menu ── */
+@media (max-width: 860px) {
+  .pydocs-header { gap: 8px; padding: 6px 12px; }
+  .pydocs .pydocs-menu {
+    display: grid; place-items: center; flex: none; width: 38px; height: 38px;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); cursor: pointer;
+  }
+  .pydocs-crumbs .wide, .pydocs-tools { display: none; }
+  .pydocs-layout { display: block; }
+  .pydocs-sidebar {
+    position: fixed; inset: 0 auto 0 0; z-index: 40; width: min(320px, 86vw); max-height: none;
+    padding: 16px 18px calc(32px + env(safe-area-inset-bottom)); background: var(--bg);
+    transform: translateX(-100%); visibility: hidden; transition: transform .25s ease, visibility 0s .25s;
+  }
+  .pydocs--menu .pydocs-sidebar { transform: none; visibility: visible; transition: transform .25s ease; box-shadow: 0 0 24px rgba(0,0,0,.25); }
+  .pydocs--menu .pydocs-scrim { display: block; position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.4); border: 0; }
+  .pydocs-drawer-tools { display: flex; flex-direction: column; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .pydocs-drawer-tools .pydocs-search input { flex: 1; width: auto; }
+  .pydocs .pydocs-search input, .pydocs .pydocs-secret-input { height: 40px; font-size: 16px; } /* under 16px, iOS zooms in on focus */
+  .pydocs .pydocs-search button, .pydocs .pydocs-secret-btn { height: 40px; }
+  .pydocs-main { padding: 18px 16px 40px; }
+  .pydocs-main h1 { font-size: 27px; }
+  .pydocs-index { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); }
+  .pydocs-index a { padding: 6px 6px; }
+  .pydocs-entry dd { margin-left: 0; }
+  .pydocs-sig { font-size: 14px; }
+  .pydocs .pydocs-copy { opacity: 1; } /* no hover on touch: always shown, so code starts below it */
+  .pydocs-pre pre { padding-top: 34px; }
+  .pydocs-secret-form { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pydocs-sidebar, .pydocs-footer, .pydocs .pydocs-copy { transition: none !important; }
+}

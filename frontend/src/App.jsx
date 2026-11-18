@@ -54,6 +54,24 @@ export default function App() {
     return () => clearTimeout(id)
   }, [isFinished])
 
+  // Phones and tablets play full screen, locked sideways. Browsers only allow
+  // that from a tap: the unlock tap counts, and any later tap re-enters if the
+  // player left full screen. (iPhone Safari has no full-screen API for pages.)
+  useEffect(() => {
+    if (!unlocked || !matchMedia('(pointer: coarse)').matches) return
+    const go = () => {
+      const el = document.documentElement
+      const request = el.requestFullscreen || el.webkitRequestFullscreen
+      if (document.fullscreenElement || document.webkitFullscreenElement || !request) return
+      Promise.resolve(request.call(el, { navigationUI: 'hide' }))
+        .then(() => screen.orientation?.lock?.('landscape'))
+        .catch(() => {})
+    }
+    go()
+    addEventListener('pointerup', go)
+    return () => removeEventListener('pointerup', go)
+  }, [unlocked])
+
   if (!unlocked) return <PythonDocs onUnlock={() => setUnlocked(true)} />
 
   return (
@@ -61,6 +79,15 @@ export default function App() {
       {/* ── 3D world (lobby + table) ───────────────────────────────── */}
       <div className="canvas-root">
         <Experience />
+      </div>
+
+      {/* Phones play sideways; CSS shows this only on narrow portrait screens. */}
+      <div className="rotate-hint">
+        <svg viewBox="0 0 64 64" width="72" height="72" aria-hidden="true">
+          <rect x="22" y="8" width="20" height="36" rx="4" fill="none" stroke="currentColor" strokeWidth="3" />
+          <path d="M14 50a20 20 0 0 0 30 4m0 0v-7m0 7h-7" fill="none" stroke="#ffc53d" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        <p>Turn your phone sideways to play</p>
       </div>
 
       {/* ── Screen-space HUD / overlays ────────────────────────────── */}

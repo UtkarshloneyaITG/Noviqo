@@ -312,6 +312,57 @@ class TestLobbyBackgrounds:
 
 # ── persistence round trip ───────────────────────────────────────────────
 
+class TestLeaderboard:
+    @staticmethod
+    def player(acc, name, rp=0, wins=0, games=1):
+        aid = new(acc, name)[0]["id"]
+        d = acc.accounts[aid]
+        d["rp"]["uno"], d["stats"]["wins"], d["stats"]["games"] = rp, wins, games
+        return aid
+
+    def test_points_board_orders_by_rank_points(self, acc):
+        a = self.player(acc, "@ana", rp=120, wins=1)
+        b = self.player(acc, "@bob", rp=300)
+        c = self.player(acc, "@cyd", wins=9)
+        rows = acc.leaderboard(a, "rp", "global")["rows"]
+        assert [r["id"] for r in rows] == [b, a, c]
+        assert rows[1] == {"place": 2, "id": a, "username": "@ana", "display_name": "ana",
+                           "character": "char:m-Casual", "rank_label": "Bronze II", "rp": 120, "wins": 1}
+
+    def test_wins_board_orders_by_wins(self, acc):
+        a = self.player(acc, "@ana", rp=120, wins=1)
+        b = self.player(acc, "@bob", rp=300)
+        c = self.player(acc, "@cyd", wins=9)
+        assert [r["id"] for r in acc.leaderboard(a, "wins", "global")["rows"]] == [c, a, b]
+
+    def test_global_board_leaves_out_players_who_never_played(self, acc):
+        a = self.player(acc, "@ana", wins=1)
+        fresh = new(acc, "@newbie")[0]["id"]
+        board = acc.leaderboard(fresh, "wins", "global")
+        assert [r["id"] for r in board["rows"]] == [a]
+        assert board["me"]["id"] == fresh and board["me"]["place"] is None
+
+    def test_friends_board_is_you_and_your_friends(self, acc):
+        a = self.player(acc, "@ana", wins=1)
+        b = self.player(acc, "@bob", wins=2)
+        self.player(acc, "@cyd", wins=5)
+        acc.friend_request(a, "@bob")
+        acc.friend_accept(b, a)
+        assert [r["id"] for r in acc.leaderboard(a, "wins", "friends")["rows"]] == [b, a]
+
+    def test_your_place_is_reported_when_you_are_off_the_list(self, acc):
+        self.player(acc, "@ana", wins=5)
+        self.player(acc, "@bob", wins=4)
+        me = self.player(acc, "@cyd", wins=1)
+        board = acc.leaderboard(me, "wins", "global", limit=2)
+        assert len(board["rows"]) == 2 and board["me"]["place"] == 3
+
+    def test_unknown_board_rejected(self, acc):
+        a = self.player(acc, "@ana")
+        with pytest.raises(AccountError):
+            acc.leaderboard(a, "coins", "global")
+
+
 class TestPersistence:
     def test_dirty_tracking_and_reload(self, acc, clock):
         a, token = new(acc)

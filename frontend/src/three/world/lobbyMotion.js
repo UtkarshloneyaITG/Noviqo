@@ -37,7 +37,7 @@ export const LOBBY_EMOTES = {
     name: 'Thumbs up', icon: '👍', secs: 2,
     pose(t, p) {
       p.bend('head', 'x', 0.12 * Math.max(0, Math.sin(t * 7)))
-      p.arm('r', [0.3, -0.35, 1], [-0.1, 1, 0.5])
+      p.arm('r', [0.25, -0.75, 0.6], [-0.1, 0.55, 1]) // fist out in front of the chest
     },
   },
   clap: {
@@ -52,7 +52,7 @@ export const LOBBY_EMOTES = {
     pose(t, p) {
       p.bend('torso', 'x', -0.1 + 0.07 * Math.sin(t * 16))
       p.bend('head', 'x', -0.2)
-      for (const s of 'lr') p.arm(s, [0.4, -0.9, 0.3], [-0.85, 0.05, 0.5])
+      for (const s of 'lr') p.arm(s, [0.45, -1, 0.2], [-0.55, -0.1, 0.8]) // hands on the belly
     },
   },
   think: {
@@ -60,8 +60,8 @@ export const LOBBY_EMOTES = {
     pose(t, p) {
       p.bend('head', 'z', 0.14)
       p.bend('head', 'x', 0.08)
-      p.arm('l', [0.3, -0.95, 0.35], [-1, 0.15, 0.45])
-      p.arm('r', [0.2, -0.6, 0.8], [-0.4, 1, 0.3])
+      p.arm('l', [0.3, -0.95, 0.35], [-1, 0.15, 0.45]) // across the waist, propping the elbow
+      p.arm('r', [0.15, -0.9, 0.35], [-0.6, 1, 0.08]) // knuckles under the chin
     },
   },
   dance: {
@@ -80,7 +80,7 @@ export const LOBBY_EMOTES = {
     name: 'Salute', icon: '🫡', secs: 2.2,
     pose(t, p) {
       p.bend('head', 'x', -0.06)
-      p.arm('r', [1, 0.05, 0.45], [-0.8, 0.6, 0.05])
+      p.arm('r', [1, 0.1, 0.3], [-0.55, 0.8, -0.1]) // elbow out, fingertips at the brow
     },
   },
   bow: {
@@ -90,7 +90,7 @@ export const LOBBY_EMOTES = {
       p.bend('torso', 'x', a)
       p.bend('head', 'x', 0.3 * a)
       // palms together at the chest, carried down with the bow
-      for (const s of 'lr') p.arm(s, tilt([0.15, -0.6, 0.75], a * p.w), tilt([-0.9, 0.7, 0.5], a * p.w))
+      for (const s of 'lr') p.arm(s, tilt([0.25, -0.7, 0.6], a * p.w), tilt([-0.55, 0.75, 0.55], a * p.w))
     },
   },
   flex: {
@@ -98,7 +98,7 @@ export const LOBBY_EMOTES = {
     pose(t, p) {
       const k = 0.5 + 0.5 * Math.sin(t * 8)
       p.bend('chest', 'x', -0.06)
-      for (const s of 'lr') p.arm(s, [1, 0.12, 0.1], [0.05 - 0.2 * k, 1, 0.12])
+      for (const s of 'lr') p.arm(s, [1, 0.25, 0.05], [-0.45 - 0.2 * k, 1, 0.15]) // biceps curled toward the head
     },
   },
 }

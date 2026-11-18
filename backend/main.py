@@ -374,6 +374,11 @@ async def _push_profile(aid: str) -> None:
     await _to(aid, "profile", profile=accounts.profile(aid))
 
 
+async def _leaderboard(ws: WebSocket, msg: dict) -> None:
+    aid = manager.get_player_id(ws)
+    await _to(aid, "leaderboard", **accounts.leaderboard(aid, msg.get("board"), msg.get("scope")))
+
+
 async def _update_profile(ws: WebSocket, msg: dict) -> None:
     aid = manager.get_player_id(ws)
     if "display_name" in msg:
@@ -855,7 +860,7 @@ async def _broadcast_to_room(room_id: str, message: dict, exclude_player: Option
 SIGNED_OUT_HANDLERS = {"signup": _signup, "signin": _signin, "auth": _auth}
 
 HANDLERS = {
-    "signout": _signout, "update_profile": _update_profile, "equip": _equip, "buy": _buy,
+    "signout": _signout, "update_profile": _update_profile, "leaderboard": _leaderboard, "equip": _equip, "buy": _buy,
     "friend_request": _friend_request, "friend_accept": _friend_accept,
     "friend_decline": _friend_decline, "friend_remove": _friend_remove,
     "party_invite": _party_invite, "party_accept": _party_accept, "party_request": _party_request,

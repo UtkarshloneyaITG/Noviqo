@@ -11,6 +11,7 @@ import SignIn from './SignIn'
 import Chat from './Chat'
 import { FriendsStrip, FriendsPanel, InvitePicker } from './Friends'
 import { Inventory, Shop, Milestones, Ranks, Settings, GamePicker } from './Panels'
+import Leaderboard from './Leaderboard'
 import '../styles/lobby.css'
 
 const PANELS = {
@@ -18,6 +19,7 @@ const PANELS = {
   shop: Shop,
   milestones: Milestones,
   ranks: Ranks,
+  leaderboard: Leaderboard,
   settings: Settings,
   friends: FriendsPanel,
   invite: InvitePicker,
@@ -166,14 +168,15 @@ function PlayColumn() {
       </button>
     )
   } else {
-    start = (
-      <button
-        className={`lb-start ${me?.ready ? 'lb-start--on' : ''}`}
-        aria-pressed={!!me?.ready}
-        onClick={() => send('party_ready', { ready: !me?.ready })}
-      >
+    start = me?.ready ? (
+      <button className="lb-start lb-start--cancel" onClick={() => send('party_ready', { ready: false })}>
+        Cancel
+        <small>Waiting for the leader</small>
+      </button>
+    ) : (
+      <button className="lb-start" onClick={() => send('party_ready', { ready: true })}>
         Ready
-        <small>{me?.ready ? 'Waiting for the leader' : 'Tap when you are set'}</small>
+        <small>Tap when you are set</small>
       </button>
     )
   }
@@ -338,6 +341,7 @@ const DOCK = [
   ['shop', 'Shop', 'shop'],
   ['milestones', 'Milestones', 'medal'],
   ['ranks', 'Ranks', 'bars'],
+  ['leaderboard', 'Leaders', 'trophy'],
 ]
 
 function Dock() {

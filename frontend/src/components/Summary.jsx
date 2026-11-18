@@ -8,6 +8,7 @@ import { useMemo } from 'react'
 import { useAppStore } from '../store/appStore'
 import { CARD_BACKS, FELTS, EMOTES } from '../items'
 import { usePortrait } from '../three/world/characters'
+import { Coin } from '../lobby/ui'
 import '../styles/table.css'
 
 const PLACES = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'] // max 7 players
@@ -35,21 +36,6 @@ function Swatch({ id }) {
   }
   if (kind === 'felt' && FELTS[id]) return <span className="tb-swatch tb-swatch--felt" style={{ '--f': FELTS[id] }} />
   return <span className="tb-swatch">{EMOTES[id]?.[0] ?? '★'}</span>
-}
-
-function Coin() {
-  return (
-    <svg className="tb-coin" viewBox="0 0 22 22" aria-hidden="true">
-      <defs>
-        <linearGradient id="tb-coin-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ffe28a" />
-          <stop offset="1" stopColor="#d0861c" />
-        </linearGradient>
-      </defs>
-      <circle cx="11" cy="11" r="10" fill="url(#tb-coin-g)" />
-      <circle cx="11" cy="11" r="6.5" fill="none" stroke="#8a5212" strokeWidth="1.5" />
-    </svg>
-  )
 }
 
 export default function Summary({ winner, winnerId, myId }) {
@@ -127,7 +113,7 @@ export default function Summary({ winner, winnerId, myId }) {
         {reward && (
           <div className="tb-rewards">
             <div className="tb-reward">
-              <Coin />
+              <Coin className="tb-coin" />
               <b>+{reward.coins ?? 0}</b>
               <small>coins</small>
             </div>

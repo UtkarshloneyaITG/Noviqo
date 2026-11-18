@@ -83,7 +83,8 @@
 .tb-mode { font-size: 12px; font-weight: 800; color: var(--cyan); }
 .tb-mode--ranked { color: var(--amber); }
 .tb-dir { font-size: 13px; font-weight: 700; color: var(--muted); }
-.tb-dir svg { width: 18px; height: 18px; stroke: var(--cyan); fill: none; stroke-width: 2; }
+.tb-dir svg { width: 18px; height: 18px; stroke: var(--cyan); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.tb-dir svg .tip { fill: var(--cyan); stroke: none; }
 .tb-dir--ccw svg { transform: scaleX(-1); }
 .tb-leave { height: 40px; }
 
@@ -182,7 +183,7 @@
 .tb-emoji:hover { background: rgba(79, 216, 255, 0.16); transform: translateY(-2px); }
 .tb-chat-form { display: flex; gap: 6px; padding: 6px; }
 .tb-chat-toggle { width: 38px; height: 38px; display: grid; place-items: center; clip-path: var(--cut-s); background: rgba(255, 255, 255, 0.06); }
-.tb-chat-toggle svg { width: 20px; height: 20px; stroke: var(--cyan); fill: none; stroke-width: 1.8; }
+.tb-chat-toggle svg { width: 20px; height: 20px; stroke: var(--cyan); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .tb-chat-toggle[aria-expanded="true"] { background: rgba(79, 216, 255, 0.18); }
 .tb-chat-input {
   width: 200px;
@@ -425,6 +426,22 @@
   .tb-chat-input { width: 150px; }
   .tb-announce-title { font-size: 52px; }
 }
+
+/* Two-tone icons: soft fill on each icon's main shape (same set as the lobby). */
+.tb svg .f { fill: currentColor; fill-opacity: .22; }
+.tb-dir svg, .tb-chat-toggle svg { color: var(--cyan); }
+
+/* Phones held sideways (≈390 px tall): the whole game HUD — bars, panels,
+   dialogs and the labels over the table — scales down like the lobby does. */
+@media (max-height: 500px) {
+  .tb { zoom: .62; }
+  /* vh is scaled by the zoom too: undo it so dialogs use the whole screen height,
+     and keep Play again / Back to lobby in view while the results scroll. */
+  .tb-card { max-height: calc(100vh / .62 - 24px); }
+  .tb-card .tb-buttons { position: sticky; bottom: -24px; margin-bottom: -24px; padding: 12px 0 24px; background: rgba(9, 14, 34, 0.97); }
+  .tb-confetti i { animation-name: tb-fall-zoomed; }
+}
+@keyframes tb-fall-zoomed { to { transform: translateY(calc(110vh / .62)) rotate(540deg); opacity: 0.4; } }
 
 /* 3-2-1 before a new deal opens; blocks clicks until play starts */
 .tb-countdown {

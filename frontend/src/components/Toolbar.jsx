@@ -22,8 +22,9 @@ export default function Toolbar() {
       </div>
       <div className={`tb-panel tb-chip tb-dir${ccw ? ' tb-dir--ccw' : ''}`} role="status">
         <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 12a8 8 0 1 1-2.34-5.66" />
-          <path d="M20 4v4h-4" />
+          <circle className="f" cx="12" cy="12" r="5" />
+          <path d="M19.6 12.6a7.6 7.6 0 1 1-2.5-6.2" />
+          <path className="tip" d="M20.6 3.6v5.6H15z" />
         </svg>
         <span>{ccw ? 'Counter-clockwise' : 'Clockwise'}</span>
       </div>

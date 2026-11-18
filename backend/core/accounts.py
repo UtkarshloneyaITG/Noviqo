@@ -182,6 +182,31 @@ class Accounts:
     def rank_label(self, aid: str) -> str:
         return catalog.rank_info(self.accounts[aid]["rp"].get("uno", 0))["label"]
 
+    # ── leaderboard ──────────────────────────────────────────────────────
+    BOARDS = {"rp": lambda d: d["rp"].get("uno", 0), "wins": lambda d: d["stats"]["wins"]}
+
+    def leaderboard(self, me: str, board, scope, limit: int = 50) -> dict:
+        """Top `limit` by ranked points or wins (ties: the other stat, then username).
+        Global leaves out accounts that never played; friends is you + your friends.
+        `me` is always your own row (place None if you're not on the board)."""
+        if board not in self.BOARDS or scope not in ("global", "friends"):
+            raise AccountError("Unknown leaderboard.")
+        main, tie = self.BOARDS[board], self.BOARDS["wins" if board == "rp" else "rp"]
+        if scope == "friends":
+            ids = [me, *self.accounts[me]["friends"]]
+        else:
+            ids = [i for i, d in self.accounts.items() if d["stats"]["games"] > 0]
+        # ponytail: sorts every account per request; keep a sorted index once there are tens of thousands
+        ranked = sorted(ids, key=lambda i: (-main(self.accounts[i]), -tie(self.accounts[i]), self.accounts[i]["username"]))
+        place = {aid: n for n, aid in enumerate(ranked, 1)}
+
+        def row(aid):
+            d = self.accounts[aid]
+            return {"place": place.get(aid), **self.person(aid), "rank_label": self.rank_label(aid),
+                    "rp": d["rp"].get("uno", 0), "wins": d["stats"]["wins"]}
+
+        return {"board": board, "scope": scope, "rows": [row(i) for i in ranked[:limit]], "me": row(me)}
+
     def set_display_name(self, aid: str, name) -> None:
         self.accounts[aid]["display_name"] = clean_display_name(name)
         self._touch(aid)

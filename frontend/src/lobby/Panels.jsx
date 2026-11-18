@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { Coin, Crest, GameLogo, ItemArt, Modal, TIERS, rankColor, useItemMap } from './ui'
+import { Coin, Crest, GameArt, ItemArt, Modal, TIERS, rankColor, useItemMap } from './ui'
 
 const KINDS = [
   ['character', 'Characters'],
@@ -282,7 +282,7 @@ export function GamePicker({ onClose }) {
       <div className="lb-games">
         {GAMES.map((g) => (
           <button key={g.id} className={`lb-game ${g.ready ? 'act' : ''}`} disabled={!g.ready} aria-pressed={!!g.ready} onClick={onClose}>
-            {g.ready ? <GameLogo size={64} /> : <span className="soon" aria-hidden="true">?</span>}
+            {g.ready ? <GameArt /> : <span className="soon" aria-hidden="true">?</span>}
             <b>{g.name}</b>
             <small>{g.ready ? 'Selected' : 'Coming soon'}</small>
           </button>
