@@ -64,3 +64,7 @@ desktop.ini
 
 # ── Render ────────────────────────────────────────────────────────────────────
 # Render injects environment variables at runtime — no .env files needed
+
+# ── Claude Code (local only — never commit) ─────────────────────────────────
+CLAUDE.md
+.claude/
