@@ -1,10 +1,10 @@
 /**
- * WildColorPicker — modal overlay that appears when the player
+ * ColorPicker — modal overlay that appears when the player
  * plays a Wild or Wild Draw Four card. They must choose a colour.
  */
 
 import React from 'react'
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
 const COLORS = [
   { key: 'red',    label: 'Red',    emoji: '🔴' },
@@ -13,8 +13,8 @@ const COLORS = [
   { key: 'yellow', label: 'Yellow', emoji: '🟡' },
 ]
 
-export default function WildColorPicker() {
-  const { chooseColor, cancelColorPicker } = useGameStore()
+export default function ColorPicker() {
+  const { chooseColor, cancelColorPicker } = useAppStore()
 
   return (
     <div className="modal-overlay" onClick={cancelColorPicker}>

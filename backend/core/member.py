@@ -4,7 +4,7 @@ Player model — holds a player's identity and current hand.
 import uuid
 from dataclasses import dataclass, field
 from typing import List
-from .card import Card
+from .item import Card
 
 
 @dataclass

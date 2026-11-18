@@ -10,25 +10,25 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { useGameStore } from './store/gameStore'
+import { useAppStore } from './store/appStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import Experience from './three/Experience'
-import GameHud from './components/GameHud'
+import Toolbar from './components/Toolbar'
 import ChatBar from './components/ChatBar'
-import TurnTimerBar from './components/TurnTimerBar'
+import TimerBar from './components/TimerBar'
 import HintBar from './components/HintBar'
-import TurnAnnouncer from './components/TurnAnnouncer'
-import WildColorPicker from './components/WildColorPicker'
-import GameOver from './components/GameOver'
+import Announcer from './components/Announcer'
+import ColorPicker from './components/ColorPicker'
+import Summary from './components/Summary'
 import PythonDocs from './components/PythonDocs'
 
 // Hold the Game Over modal back briefly so the in-scene 3D win moment
 // (confetti over the table) reads first.
-const GAME_OVER_DELAY_MS = 1800
+const SUMMARY_DELAY_MS = 1800
 
 export default function App() {
   const [unlocked, setUnlocked] = useState(false)
-  const [showGameOver, setShowGameOver] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
 
   useWebSocket()
 
@@ -41,16 +41,16 @@ export default function App() {
     showColorPicker,
     error,
     notification,
-  } = useGameStore()
+  } = useAppStore()
 
   const isFinished = gameState?.status === 'finished'
 
   useEffect(() => {
     if (!isFinished) {
-      setShowGameOver(false)
+      setShowSummary(false)
       return
     }
-    const id = setTimeout(() => setShowGameOver(true), GAME_OVER_DELAY_MS)
+    const id = setTimeout(() => setShowSummary(true), SUMMARY_DELAY_MS)
     return () => clearTimeout(id)
   }, [isFinished])
 
@@ -82,16 +82,16 @@ export default function App() {
       {error && <div className="toast toast--error">{error}</div>}
       {notification && <div className="toast toast--info">{notification}</div>}
 
-      <GameHud />
-      <TurnTimerBar />
+      <Toolbar />
+      <TimerBar />
       <HintBar />
       <ChatBar />
-      <TurnAnnouncer />
+      <Announcer />
 
-      {showColorPicker && <WildColorPicker />}
+      {showColorPicker && <ColorPicker />}
 
-      {isFinished && showGameOver && gameState && (
-        <GameOver
+      {isFinished && showSummary && gameState && (
+        <Summary
           winner={gameState.winner}
           winnerId={gameState.winner_id}
           myId={playerId}

@@ -1,5 +1,5 @@
 /**
- * Card3D — a single physical UNO card with genuinely rounded corners.
+ * Tile3D — a single physical UNO card with genuinely rounded corners.
  *
  * Geometry is a rounded-rectangle extrusion (white edge wall) with two rounded
  * face planes: the front shows the card art (+Z), the back shows the UNO back
@@ -13,16 +13,16 @@
  *   onClick     pointer click handler (raycast)
  *   ...group props (position/rotation/scale) are spread onto the wrapper group
  */
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { CARD_T, getCardFaceTexture, getCardBackTexture } from './cardTextures'
-import { getCardGeometries } from './cardGeometry'
+import { CARD_T, getCardFaceTexture, getCardBackTexture } from './tileTextures'
+import { getCardGeometries } from './tileGeometry'
 
 const EDGE_COLOR = '#f4f4f4'
 const FACE_OFFSET = CARD_T / 2 + 0.0012
 
-export default function Card3D({
+export default function Tile3D({
   card = null,
   faceDown = false,
   playable = false,
@@ -34,6 +34,13 @@ export default function Card3D({
 }) {
   const groupRef = useRef()
   const [hovered, setHovered] = useState(false)
+
+  // A hovered card that unmounts (e.g. it was just played) never gets
+  // onPointerOut — reset the cursor here so it doesn't stay a pointer.
+  useEffect(() => {
+    if (!hovered) return
+    return () => { document.body.style.cursor = 'auto' }
+  }, [hovered])
 
   const { front, back, body } = getCardGeometries()
   const backTex = getCardBackTexture()

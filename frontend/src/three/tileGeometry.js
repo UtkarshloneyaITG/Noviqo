@@ -11,7 +11,7 @@
  * plane is flipped to face -Z.
  */
 import * as THREE from 'three'
-import { CARD_W, CARD_H, CARD_T } from './cardTextures'
+import { CARD_W, CARD_H, CARD_T } from './tileTextures'
 
 const RADIUS = 0.14
 const SEG = 10

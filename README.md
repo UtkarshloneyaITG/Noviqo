@@ -1,192 +1,106 @@
-🃏 UNO Multiplayer — Real-Time Web Game
+# Noviqo
 
-A full-featured, real-time multiplayer UNO web application with authoritative server-side logic and a reactive modern frontend.
+A real-time, multi-user session service: a FastAPI WebSocket backend that owns all
+session state, a React + three.js web client, and MongoDB persistence so live
+sessions survive a server restart.
 
-Built using:
+## Stack
 
-Backend: Python + FastAPI + WebSockets
-Frontend: React 18 + Vite + Zustand
-🚀 Overview
+| Layer     | Technology                                   |
+|-----------|----------------------------------------------|
+| Backend   | Python 3.11+, FastAPI, WebSockets            |
+| Storage   | MongoDB (via PyMongo async)                  |
+| Frontend  | React 18, Vite, Zustand, React Three Fiber   |
 
-This project implements a complete UNO game engine with real-time multiplayer synchronization, room-based matchmaking, and rule enforcement handled entirely on the backend.
+## Project structure
 
-It is designed as a local-first prototype but structured for easy production deployment.
-
-✨ Features
-Category	Feature	Description
-👥 Multiplayer	2–4 Players	Supports 1v1, 3-player, and 4-player matches
-🃏 Cards	Full UNO Deck	Includes numbers, Skip, Reverse, Draw Two, Wild, Wild Draw Four
-⚡ Gameplay	Real-time	WebSocket-based low-latency gameplay
-🔁 Rules	Draw Stacking	Stack Draw Two and Wild Draw Four (house rule)
-⚖️ Rules	Wild Draw Four Challenge	Enforced validation with penalty system
-🔔 Interaction	UNO Button	Prompt appears automatically at 1 card
-🎯 Interaction	Catch UNO	Penalize players who fail to call UNO
-🔌 Reliability	Reconnection	Resume game after refresh/disconnect
-🏠 Lobby	Room Codes	Shareable 6-character room IDs
-🔍 Lobby	Open Rooms List	Browse joinable rooms
-📜 UX	Game Log	Full action history tracking
-📱 UI	Responsive	Optimized for desktop and mobile
-🏗️ Project Structure
-UNO/
+```
 ├── backend/
-│   ├── main.py                  # FastAPI entrypoint + WebSocket router
-│   ├── requirements.txt
-│   ├── game/
-│   │   ├── card.py              # Card definitions & enums
-│   │   ├── deck.py              # Deck generation (108 cards)
-│   │   ├── player.py            # Player state model
-│   │   ├── game_state.py        # Core game engine (authoritative logic)
-│   │   └── room_manager.py      # Room lifecycle & registry
-│   └── websocket/
-│       └── connection_manager.py # WebSocket connection handling
+│   ├── main.py                    # FastAPI app: WebSocket router, timers, reconnect handling
+│   ├── storage.py                 # MongoDB persistence (live channels + history)
+│   ├── core/                      # Session engine (pure logic, no I/O)
+│   │   ├── session.py
+│   │   ├── channel_manager.py
+│   │   ├── member.py
+│   │   ├── item.py
+│   │   └── pool.py
+│   ├── websocket/
+│   │   └── connection_manager.py  # Socket ↔ member ↔ channel mapping, message delivery
+│   └── tests/                     # pytest suites (engine, server, storage)
 │
 └── frontend/
-    ├── package.json
-    ├── vite.config.js           # Dev proxy config
-    ├── index.html
     └── src/
-        ├── App.jsx              # Root app / routing logic
-        ├── main.jsx
-        ├── store/
-        │   └── gameStore.js     # Zustand global state
-        ├── hooks/
-        │   └── useWebSocket.js  # WebSocket lifecycle manager
-        ├── components/
-        │   ├── Lobby.jsx
-        │   ├── GameBoard.jsx
-        │   ├── Card.jsx
-        │   ├── PlayerHand.jsx
-        │   ├── OtherPlayer.jsx
-        │   ├── DiscardPile.jsx
-        │   ├── DrawPile.jsx
-        │   ├── WildColorPicker.jsx
-        │   ├── GameLog.jsx
-        │   └── GameOver.jsx
+        ├── App.jsx                # Root component
+        ├── store/appStore.js      # Client state (Zustand)
+        ├── hooks/useWebSocket.js  # Connection, offline queue, session resume
+        ├── components/            # Screen-space UI
+        ├── three/                 # 3D scene components
         └── styles/
-            └── index.css
-⚙️ Quick Start
-✅ Prerequisites
-Python 3.11+
-Node.js 18+
-🔧 Backend Setup
+```
+
+## Getting started
+
+Prerequisites: Python 3.11+, Node.js 18+.
+
+### Backend
+
+```bash
 cd backend
-
 python -m venv venv
-
-# Activate environment
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-
+venv\Scripts\activate          # Windows
+source venv/bin/activate       # macOS / Linux
 pip install -r requirements.txt
-
+cp .env.example .env           # then fill in DB (optional)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
 
-Backend will run at:
+The server listens on `http://localhost:8000` with the WebSocket endpoint at `ws://localhost:8000/ws`.
 
-http://localhost:8000
-ws://localhost:8000/ws
-🎨 Frontend Setup
+### Frontend
+
+```bash
 cd frontend
-
 npm install
-npm run dev
+npm run dev                    # http://localhost:3000
+```
 
-Open:
+## Configuration
 
-http://localhost:3000
+| Variable      | Where             | Purpose |
+|---------------|-------------------|---------|
+| `DB`          | `backend/.env`    | MongoDB connection string. The database named in its path stores the `channels` (live state) and `history` collections. If unset, the server runs in memory only. |
+| `VITE_WS_URL` | `frontend/.env`   | WebSocket URL of the backend, e.g. `ws://localhost:8000/ws` for local development or `wss://your-backend/ws` in production. |
 
-Vite automatically proxies API + WebSocket requests to the backend.
+`.env` files are gitignored; see the `.env.example` files.
 
-🎮 How to Play
-Open the app → Click Create Room
-Enter your name → Receive a Room Code
-Share the code with other players
-Others join via Join Room
-Host clicks Start Game
-Play UNO 🎉
-🔌 WebSocket Protocol
-Client → Server
-Type	Payload	Description
-create_room	{ player_name }	Create a room
-join_room	{ room_id, player_name, player_id? }	Join/reconnect
-start_game	—	Start match
-play_card	{ card_id, chosen_color? }	Play a card
-draw_card	—	Draw from deck
-pass_turn	—	Skip after draw
-call_uno	—	Declare UNO
-catch_uno	{ target_id }	Penalize opponent
-challenge_wild4	—	Challenge move
-leave_room	—	Exit room
-Server → Client
-Type	Description
-joined	Initial state sync
-room_update	Lobby updates
-player_joined	New player joined
-player_left	Player disconnected
-player_reconnected	Player resumed session
-game_state	Personalized game state
-error	Validation error
-📜 Game Rules (Implemented)
-Standard UNO rules with enhancements
-Reverse acts as Skip in 2-player mode
-Draw cards are stackable
-Wild Draw Four includes challenge mechanic
-UNO enforcement:
-Must declare UNO at 1 card
-Failure → draw 2 penalty
-First player with 0 cards wins
-🚀 Deployment
-Backend
+## HTTP endpoints
+
+| Method | Path      | Description                 |
+|--------|-----------|-----------------------------|
+| GET    | `/health` | Liveness check → `{"status": "ok"}` |
+| GET    | `/rooms`  | Open channels that can be joined |
+
+All other traffic is JSON messages over `/ws`.
+
+## Tests
+
+```bash
+cd backend
+pip install pytest httpx
+python -m pytest tests/ -v
+```
+
+Tests run fully in memory and never connect to the configured database.
+
+## Deployment
+
+**Backend** (e.g. Render, Railway, Fly.io):
+
+```bash
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port $PORT
+```
 
-Compatible with:
+Set `DB` in the host's environment settings (`backend/render.yaml` declares it for Render).
 
-Railway
-Render
-Fly.io
-Frontend
-
-Set environment variable:
-
-VITE_WS_URL=wss://your-backend-domain.com/ws
-
-Build:
-
-npm run build
-
-Deploy /dist to:
-
-Vercel
-Netlify
-🧪 Development Tips
-Use multiple tabs to simulate players
-Inspect /rooms endpoint for lobby debugging
-Backend logs all events (INFO level)
-Health check:
-GET /health → { "status": "ok" }
-🧠 Architecture Notes
-Backend is authoritative → prevents cheating
-Game state is room-isolated
-Frontend receives personalized state
-WebSocket layer handles:
-Routing
-Reconnection
-Session recovery
-🛠️ Tech Stack
-Layer	Technology
-Backend	FastAPI
-Transport	WebSockets
-Frontend	React 18
-Build Tool	Vite
-State	Zustand
-Styling	Custom CSS
-📌 Future Improvements
-AI bot players
-Spectator mode
-Persistent stats / leaderboard
-Authentication system
-Sound effects + advanced animations
+**Frontend** (e.g. Vercel, Netlify): set `VITE_WS_URL`, run `npm run build`, and deploy `frontend/dist`.

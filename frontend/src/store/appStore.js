@@ -41,8 +41,10 @@ function clearSession() {
 const RESUME_TIMEOUT_MS = 6000
 let resumeTimer = null
 let actionPendingTimer = null
+let errorTimer = null
+let notificationTimer = null
 
-export const useGameStore = create((set, get) => ({
+export const useAppStore = create((set, get) => ({
   // ── Connection ────────────────────────────────────────────────────────────
   isConnected: false,
   sendMessage: null,          // injected by the useWebSocket hook
@@ -129,14 +131,18 @@ export const useGameStore = create((set, get) => ({
     actionPendingTimer = setTimeout(() => set({ actionPending: false }), 3000)
   },
 
+  // Each new toast restarts its own timer, so an older timeout can't wipe
+  // a newer message early.
   setError: (msg) => {
     set({ error: msg })
-    if (msg) setTimeout(() => set({ error: null }), 4000)
+    clearTimeout(errorTimer)
+    if (msg) errorTimer = setTimeout(() => set({ error: null }), 4000)
   },
 
   setNotification: (msg) => {
     set({ notification: msg })
-    if (msg) setTimeout(() => set({ notification: null }), 3000)
+    clearTimeout(notificationTimer)
+    if (msg) notificationTimer = setTimeout(() => set({ notification: null }), 3000)
   },
 
   // =========================================================================
@@ -230,6 +236,10 @@ export const useGameStore = create((set, get) => ({
 
         get()._clearActionPending()
         set({ gameState: newState })
+        // Turn moved on (e.g. timed out) while choosing a wild colour.
+        if (newState.current_player_id !== playerId && get().showColorPicker) {
+          get().cancelColorPicker()
+        }
         break
       }
 

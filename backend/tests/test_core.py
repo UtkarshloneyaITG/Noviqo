@@ -3,17 +3,17 @@ Full UNO rules test suite.
 
 Covers every official rule, edge case, and server-side validation.
 Run from the backend/ directory:
-    python -m pytest tests/test_rules.py -v
+    python -m pytest tests/test_core.py -v
 """
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from game.card import Card, Color, CardType
-from game.player import Player
-from game.game_state import GameState, GameStatus
-from game.deck import create_deck
+from core.item import Card, Color, CardType
+from core.member import Player
+from core.session import GameState, GameStatus
+from core.pool import create_deck
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -992,7 +992,9 @@ class TestRematch:
         result = g.start_game()
         assert result["success"] is True
         assert g.status == GameStatus.PLAYING
-        assert all(len(p.hand) == 7 for p in g.players)
+        # 7 each, plus 2 for the first player if the opening card is a Draw Two
+        opening_penalty = 2 if g.discard_pile[-1].card_type == CardType.DRAW_TWO else 0
+        assert sum(len(p.hand) for p in g.players) == 14 + opening_penalty
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1255,6 +1257,235 @@ class TestKick:
         assert result["success"] is True
         assert kicked_id in result["removed_player_ids"]
         assert all(p.id != kicked_id for p in g.players)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 22. Rules-audit regressions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def three_way() -> GameState:
+    """Started 3-player game, p0 to play on Red 5; p1/p2 hold 2 fillers."""
+    g = make_game("A", "B", "C")
+    force_start(g)
+    give_hand(p1(g), FILLER(), FILLER())
+    give_hand(p2(g), FILLER(), FILLER())
+    return g
+
+
+class TestFinishingCardStillTakesEffect:
+    """A player's last card must still apply its effect when play continues."""
+
+    def test_finishing_wild_sets_chosen_colour(self):
+        g = three_way()
+        wild = c("wild", "wild")
+        give_hand(p0(g), wild)
+        g.play_card(p0(g).id, wild.id, chosen_color="blue")
+        assert g.status == GameStatus.PLAYING
+        assert g.current_color == Color.BLUE
+
+    def test_finishing_number_updates_colour(self):
+        g = three_way()
+        blue5 = c("blue", "number", 5)  # matches Red 5 by number
+        give_hand(p0(g), blue5)
+        g.play_card(p0(g).id, blue5.id)
+        assert g.current_color == Color.BLUE
+
+    def test_finishing_draw_two_hits_next_player(self):
+        g = three_way()
+        d2 = c("red", "draw_two")
+        give_hand(p0(g), d2)
+        g.play_card(p0(g).id, d2.id)
+        assert g.draw_stack == 2
+        assert g.players[g.current_player_index].id == p1(g).id
+
+    def test_finishing_skip_skips_next_player(self):
+        g = three_way()
+        skip = c("red", "skip")
+        give_hand(p0(g), skip)
+        g.play_card(p0(g).id, skip.id)
+        assert g.players[g.current_player_index].id == p2(g).id
+
+
+class TestReverseCountsActivePlayers:
+    def test_reverse_acts_as_skip_when_two_active_players_remain(self):
+        g = three_way()
+        g.finished_player_ids.add(p2(g).id)  # C already went out
+        g.placements.append({"rank": 1, "id": p2(g).id, "name": "C"})
+        rev = c("red", "reverse")
+        give_hand(p0(g), rev, FILLER())
+        g.play_card(p0(g).id, rev.id)
+        assert g.players[g.current_player_index].id == p0(g).id
+
+
+class TestOpeningReverseTwoPlayer:
+    def test_opening_reverse_2player_skips_first_player(self):
+        g = make_game("A", "B")
+        g.start_game()
+        g.discard_pile[-1] = c("red", "reverse")
+        g.current_color = Color.RED
+        g.current_player_index = 0
+        g.direction = 1
+        g.draw_stack = 0
+        g._apply_start_card_effects()
+        assert g.players[g.current_player_index].id == p1(g).id
+
+
+class TestChallengeUsesHandAtPlayTime:
+    def test_cards_drawn_after_the_plus_four_do_not_count(self):
+        g = make_game("A", "B")
+        force_start(g)  # current colour RED
+        wild4 = c("wild", "wild_draw_four")
+        give_hand(p0(g), wild4, c("blue", "number", 3))  # no red → legal +4
+        g.play_card(p0(g).id, wild4.id, chosen_color="green")
+        # p0 forgot UNO and gets caught — the penalty happens to be red
+        g.deck = [c("red", "number", 1), c("red", "number", 2), FILLER()]
+        assert g.catch_uno_violation(p1(g).id, p0(g).id)["success"] is True
+        result = g.challenge_wild_four(p1(g).id)
+        assert result["challenge_result"] == "failed"
+
+
+class TestUnoFlagResets:
+    def test_uno_call_cleared_when_hand_grows(self):
+        g = make_game("A", "B")
+        force_start(g)
+        r3 = c("red", "number", 3)
+        give_hand(p0(g), r3, c("red", "number", 4))
+        give_hand(p1(g), c("red", "draw_two"), FILLER(), FILLER())
+        g.play_card(p0(g).id, r3.id)
+        g.call_uno(p0(g).id)
+        g.play_card(p1(g).id, p1(g).hand[0].id)  # +2 on p0
+        g.draw_card(p0(g).id)                    # p0 now holds 3 cards
+        state = g.get_state_for_player(p1(g).id)
+        me = next(p for p in state["players"] if p["id"] == p0(g).id)
+        assert me["has_called_uno"] is False
+
+    def test_repeat_uno_call_not_logged_again(self):
+        g = make_game("A", "B")
+        force_start(g)
+        give_hand(p0(g), FILLER())
+        g.call_uno(p0(g).id)
+        n = len(g.action_log)
+        assert g.call_uno(p0(g).id)["success"] is True
+        assert len(g.action_log) == n
+
+    def test_cannot_catch_yourself(self):
+        g = make_game("A", "B")
+        force_start(g)
+        give_hand(p0(g), FILLER())
+        assert g.catch_uno_violation(p0(g).id, p0(g).id)["success"] is False
+
+
+class TestSingleDrawPerTurn:
+    def test_cannot_draw_again_after_drawing_playable_card(self):
+        g = make_game("A", "B")
+        force_start(g)
+        g.deck = [FILLER(), FILLER(), c("red", "number", 9)]  # pop() → Red 9
+        g.draw_card(p0(g).id)
+        assert g.drawn_card_id is not None
+        assert g.draw_card(p0(g).id)["success"] is False
+
+
+class TestActionsRequirePlayingStatus:
+    def test_draw_rejected_in_lobby(self):
+        g = make_game("A", "B")
+        assert g.draw_card(p0(g).id)["success"] is False
+
+    def test_draw_rejected_after_game_over(self):
+        g = make_game("A", "B")
+        force_start(g)
+        finish_game(g)
+        current = g.players[g.current_player_index]
+        assert g.draw_card(current.id)["success"] is False
+
+    def test_catch_rejected_after_game_over(self):
+        g = make_game("A", "B", "C")
+        force_start(g)
+        give_hand(p2(g), FILLER())
+        g.status = GameStatus.FINISHED
+        assert g.catch_uno_violation(p0(g).id, p2(g).id)["success"] is False
+
+    def test_start_rejected_when_finished(self):
+        g = make_game("A", "B")
+        force_start(g)
+        finish_game(g)
+        assert g.start_game()["success"] is False
+
+
+class TestDeparture:
+    def test_disconnect_of_current_player_passes_turn(self):
+        g = three_way()
+        g.disconnect_player(p0(g).id)
+        assert g.players[g.current_player_index].id != p0(g).id
+
+    def test_last_online_player_wins_immediately(self):
+        g = make_game("A", "B")
+        force_start(g)
+        g.current_player_index = 0
+        g.disconnect_player(p1(g).id)
+        assert g.status == GameStatus.FINISHED
+        assert g.winner_id == p0(g).id
+
+
+class TestRoomManagerLifecycle:
+    def _room_with(self, *names):
+        from core.channel_manager import RoomManager
+        rm = RoomManager()
+        rid = rm.create_room()
+        players = [Player(name=n) for n in names]
+        for p in players:
+            rm.add_player_to_room(rid, p)
+        return rm, rid, players
+
+    def test_room_deleted_when_everyone_leaves_mid_game(self):
+        rm, rid, (a, b) = self._room_with("A", "B")
+        rm.get_room(rid).start_game()
+        rm.remove_player(a.id)
+        rm.remove_player(b.id)
+        assert rm.get_room(rid) is None
+
+    def test_full_rooms_not_listed_as_open(self):
+        rm, rid, _ = self._room_with(*"ABCDEFG")
+        assert rm.list_open_rooms() == []
+
+
+class TestPersistenceRoundTrip:
+    def _busy_game(self) -> GameState:
+        g = three_way()
+        g.settings["stack_draw_cards"] = True
+        g.scores[p0(g).id] = 37
+        g.kicked_player_ids.add("someone-old")
+        wild4 = c("wild", "wild_draw_four")
+        give_hand(p0(g), wild4, c("red", "number", 1), FILLER())
+        g.play_card(p0(g).id, wild4.id, chosen_color="green")  # stack + challenge pending
+        p2(g).is_connected = False
+        g.turn_deadline_ms = None  # keep turn_ms_left out of the comparison
+        return g
+
+    def test_doc_is_plain_data(self):
+        import json
+        json.dumps(self._busy_game().to_doc())  # BSON-safe: no sets, enums or objects
+
+    def test_restored_game_looks_identical_to_every_player(self):
+        g = self._busy_game()
+        g2 = GameState.from_doc(g.to_doc())
+        for p in g.players:
+            assert g2.get_state_for_player(p.id) == g.get_state_for_player(p.id)
+        assert [x.id for x in g2.deck] == [x.id for x in g.deck]
+        assert g2.kicked_player_ids == g.kicked_player_ids
+        assert g2.wild_four_illegal is True and g2.uno_called == g.uno_called
+
+    def test_restored_game_plays_on(self):
+        g2 = GameState.from_doc(self._busy_game().to_doc())
+        result = g2.challenge_wild_four(p1(g2).id)
+        assert result["challenge_result"] == "success"  # p0 held a red card
+
+    def test_unknown_keys_ignored_and_missing_keys_defaulted(self):
+        doc = self._busy_game().to_doc()
+        doc["_id"] = "XYZ"
+        doc["some_future_field"] = 1
+        del doc["settings"]
+        g2 = GameState.from_doc(doc)
+        assert g2.settings == {"turn_seconds": 30, "stack_draw_cards": False}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

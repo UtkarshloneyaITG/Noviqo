@@ -1,12 +1,12 @@
 /**
- * TurnAnnouncer — full-screen flash overlay when the turn switches to you.
+ * Announcer — full-screen flash overlay when the turn switches to you.
  * Appears for ~2.2 seconds then fades out.
  */
 import { useState, useEffect, useRef } from 'react'
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
-export default function TurnAnnouncer() {
-  const { gameState, playerId } = useGameStore()
+export default function Announcer() {
+  const { gameState, playerId } = useAppStore()
   const [visible, setVisible]   = useState(false)
   const [info,    setInfo]       = useState({ title: '', sub: '' })
   const prevIdRef  = useRef(null)

@@ -1,12 +1,12 @@
 /**
- * TurnGlowRing3D — a soft pulsing ring on the felt while it's the local
+ * GlowRing3D — a soft pulsing ring on the felt while it's the local
  * player's turn. Mounts/unmounts with the turn.
  */
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { TABLE_RADIUS, TABLE_TOP_Y } from '../layout'
 
-export default function TurnGlowRing3D() {
+export default function GlowRing3D() {
   const ref = useRef()
 
   useFrame((state) => {

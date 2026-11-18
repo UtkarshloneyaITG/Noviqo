@@ -1,5 +1,5 @@
 /**
- * GameScene3D — the full in-play 3D table: piles, direction ring,
+ * Workspace3D — the full in-play 3D table: piles, direction ring,
  * opponents around the rim, and the local player's hand.
  *
  * It is also the effects director. A ref snapshot of the previous game
@@ -16,47 +16,30 @@
  *   • status → finished     → confetti burst over the table
  */
 import { useEffect, useRef, useState } from 'react'
-import { useGameStore } from '../store/gameStore'
-import DrawPile3D from './DrawPile3D'
-import DiscardPile3D from './DiscardPile3D'
+import { useAppStore } from '../store/appStore'
+import SourceStack3D from './SourceStack3D'
+import TargetStack3D from './TargetStack3D'
 import DirectionIndicator3D from './DirectionIndicator3D'
-import Opponent3D from './Opponent3D'
-import PlayerHand3D from './PlayerHand3D'
-import FlyingCard3D from './FlyingCard3D'
+import Participant3D from './Participant3D'
+import Tray3D, { isCardPlayable } from './Tray3D'
+import FlyingTile3D from './FlyingTile3D'
 import RadialPulse3D from './effects/RadialPulse3D'
 import SeatStamp3D from './effects/SeatStamp3D'
-import WinConfetti3D from './effects/WinConfetti3D'
+import Confetti3D from './effects/Confetti3D'
 import ColorAccentLight from './effects/ColorAccentLight'
-import TurnGlowRing3D from './effects/TurnGlowRing3D'
+import GlowRing3D from './effects/GlowRing3D'
 import { opponentSeats, orderedOpponents, playerHue, seatAnchor, TABLE_TOP_Y } from './layout'
 import { DRAW_STAGGER, DEAL_STEP, FLY_DRAW_DUR } from './fxTiming'
 
-// The discard's top card is propped up toward the viewer (see DiscardPile3D)
+// The discard's top card is propped up toward the viewer (see TargetStack3D)
 // so it's clearly readable on the table; played cards land into that pose.
 const DISCARD_POS = [2.4, TABLE_TOP_Y + 0.6, -0.25]
 const DISCARD_ROT = [-Math.PI / 2 + 0.62, 0, 0]
 const DRAW_POS = [-2.4, TABLE_TOP_Y + 0.5, 0]
 const DRAW_ROT = [Math.PI / 2, 0, 0] // face-down (back up)
 
-// Whether a card is legally playable right now (mirrors the backend rule).
-function canPlay(c, gs) {
-  const top = gs.discard_top
-  if (!top) return false
-  if (gs.draw_stack > 0) {
-    if (!gs.settings?.stack_draw_cards) return false
-    if (c.card_type === 'wild_draw_four') return true
-    return c.card_type === 'draw_two' && top.card_type !== 'wild_draw_four'
-  }
-  if (c.card_type === 'wild' || c.card_type === 'wild_draw_four') return true
-  if (c.color === gs.current_color) return true
-  if (c.card_type === top.card_type) {
-    return c.card_type === 'number' ? c.number === top.number : true
-  }
-  return false
-}
-
-export default function GameScene3D() {
-  const { gameState, playerId } = useGameStore()
+export default function Workspace3D() {
+  const { gameState, playerId } = useAppStore()
   const [flying, setFlying] = useState([])
   const [fx, setFx] = useState([])
   const [dealing, setDealing] = useState(false)
@@ -233,7 +216,7 @@ export default function GameScene3D() {
 
   // Highlight the deck when it's your turn and you should/must draw.
   const myHand = gameState.my_hand || []
-  const hasPlayable = myHand.some((c) => canPlay(c, gameState))
+  const hasPlayable = myHand.some((c) => isCardPlayable(c, gameState))
   const mustDraw =
     isMyTurn && !gameState.drawn_card_id && (draw_stack > 0 || !hasPlayable)
 
@@ -250,15 +233,16 @@ export default function GameScene3D() {
   return (
     <group>
       <ColorAccentLight currentColor={current_color} />
-      {isMyTurn && status === 'playing' && !dealing && <TurnGlowRing3D />}
+      {isMyTurn && status === 'playing' && !dealing && <GlowRing3D />}
 
-      <DrawPile3D
+      {/* One draw per turn: once you've drawn, the deck isn't clickable. */}
+      <SourceStack3D
         count={draw_pile_count}
-        isMyTurn={isMyTurn}
+        isMyTurn={isMyTurn && !gameState.drawn_card_id}
         drawStack={draw_stack}
         mustDraw={mustDraw}
       />
-      <DiscardPile3D
+      <TargetStack3D
         topCard={discard_top}
         currentColor={current_color}
         suppressId={suppressId}
@@ -268,7 +252,7 @@ export default function GameScene3D() {
       <DirectionIndicator3D direction={direction} />
 
       {opponents.map((p, i) => (
-        <Opponent3D
+        <Participant3D
           key={p.id}
           player={p}
           seat={seats[i]}
@@ -278,10 +262,10 @@ export default function GameScene3D() {
         />
       ))}
 
-      <PlayerHand3D hidden={dealing} />
+      <Tray3D hidden={dealing} />
 
       {flying.map((f) => (
-        <FlyingCard3D
+        <FlyingTile3D
           key={f.key}
           card={f.card}
           faceDown={f.faceDown}
@@ -309,7 +293,7 @@ export default function GameScene3D() {
           )
         }
         if (f.type === 'confetti') {
-          return <WinConfetti3D key={f.key} onDone={() => handleFxDone(f.key)} />
+          return <Confetti3D key={f.key} onDone={() => handleFxDone(f.key)} />
         }
         return (
           <SeatStamp3D

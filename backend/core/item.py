@@ -42,6 +42,10 @@ class Card:
             "number": self.number,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "Card":
+        return cls(Color(d["color"]), CardType(d["card_type"]), d["number"], d["id"])
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

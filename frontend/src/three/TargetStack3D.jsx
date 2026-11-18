@@ -1,11 +1,11 @@
 /**
- * DiscardPile3D — the top discard card lying flat, ringed by the current
+ * TargetStack3D — the top discard card lying flat, ringed by the current
  * active colour (important after a Wild). Remounts on each new card so the
  * card "drops" onto the pile.
  */
 import { Html } from '@react-three/drei'
-import Card3D from './Card3D'
-import { ACTIVE_COLOR_HEX } from './cardTextures'
+import Tile3D from './Tile3D'
+import { ACTIVE_COLOR_HEX } from './tileTextures'
 import { TABLE_TOP_Y } from './layout'
 
 // Deterministic small rotation per card id so the pile looks hand-tossed
@@ -15,7 +15,7 @@ function jitter(id = '') {
   return ((h / 255) - 0.5) * 0.5
 }
 
-export default function DiscardPile3D({ topCard, currentColor, suppressId, underCard, recentCards = [] }) {
+export default function TargetStack3D({ topCard, currentColor, suppressId, underCard, recentCards = [] }) {
   if (!topCard) return null
 
   const ringColor = ACTIVE_COLOR_HEX[currentColor] || ACTIVE_COLOR_HEX.wild
@@ -39,7 +39,7 @@ export default function DiscardPile3D({ topCard, currentColor, suppressId, under
       {/* Older discards lying flat beneath the propped top card — gives the
           pile real depth without re-rendering more than two extra meshes. */}
       {recentCards.slice(0, 2).map((c, i) => (
-        <Card3D
+        <Tile3D
           key={c.id}
           card={c}
           liftOnHover={false}
@@ -52,7 +52,7 @@ export default function DiscardPile3D({ topCard, currentColor, suppressId, under
           new one is still flying in. Propped up toward the viewer so it's
           clearly readable on the table. */}
       {shownCard && (
-        <Card3D
+        <Tile3D
           key={shownCard.id}
           card={shownCard}
           liftOnHover={false}

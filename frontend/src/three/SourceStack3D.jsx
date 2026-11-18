@@ -1,20 +1,20 @@
 /**
- * DrawPile3D — a stack of face-down cards lying flat on the table.
+ * SourceStack3D — a stack of face-down cards lying flat on the table.
  * Clickable on your turn to draw. When it's your turn (and especially when
  * you must draw), a glowing pulsing ring under the deck highlights it.
  */
 import { useMemo, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
-import { useGameStore } from '../store/gameStore'
-import Card3D from './Card3D'
-import { CARD_T } from './cardTextures'
+import { useAppStore } from '../store/appStore'
+import Tile3D from './Tile3D'
+import { CARD_T } from './tileTextures'
 import { TABLE_TOP_Y as TOP_Y } from './layout'
 
-export default function DrawPile3D({ count = 0, isMyTurn, drawStack = 0, mustDraw = false }) {
-  const drawCard = useGameStore((s) => s.drawCard)
-  const actionPending = useGameStore((s) => s.actionPending)
-  const connectionPhase = useGameStore((s) => s.connectionPhase)
+export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, mustDraw = false }) {
+  const drawCard = useAppStore((s) => s.drawCard)
+  const actionPending = useAppStore((s) => s.actionPending)
+  const connectionPhase = useAppStore((s) => s.connectionPhase)
   const canDraw = isMyTurn && !actionPending && connectionPhase === 'online'
   const ringRef = useRef()
   const coneRef = useRef()
@@ -67,7 +67,7 @@ export default function DrawPile3D({ count = 0, isMyTurn, drawStack = 0, mustDra
       )}
 
       {stack.map((i) => (
-        <Card3D
+        <Tile3D
           key={i}
           faceDown
           liftOnHover={false}

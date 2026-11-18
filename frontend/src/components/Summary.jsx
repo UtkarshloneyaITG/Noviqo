@@ -1,11 +1,11 @@
 /**
- * GameOver — overlay shown when the game finishes.
+ * Summary — overlay shown when the game finishes.
  * Announces the winner, shows rankings with cumulative scores, and lets
  * the host start a rematch (everyone else waits or leaves).
  */
 
 import React, { useMemo } from 'react'
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
 const CONFETTI_COLORS = [
   '#f0d060','#f04468','#5294ff','#20ee86',
@@ -13,14 +13,18 @@ const CONFETTI_COLORS = [
   '#40d0ff','#ff60a0',
 ]
 
-const RANK_MEDALS = ['🥇', '🥈', '🥉', '🏅', '🏅', '🏅']
-const RANK_LABELS = ['1st', '2nd', '3rd', '4th', '5th', '6th']
+const RANK_MEDALS = ['🥇', '🥈', '🥉'] // everyone after 3rd gets 🏅
+const RANK_LABELS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'] // max 7 players
 
-export default function GameOver({ winner, winnerId, myId }) {
-  const { leaveRoom, rematch, gameState } = useGameStore()
+export default function Summary({ winner, winnerId, myId }) {
+  const { leaveRoom, rematch, gameState } = useAppStore()
   const isWinner = winnerId === myId
   const placements = gameState?.placements || []
   const isHost = gameState?.host_player_id === myId
+  // The server hands the room to whoever asks if the host has gone offline,
+  // so offer the button to everyone then — otherwise the room dead-ends.
+  const hostOnline = gameState?.players?.find((p) => p.id === gameState?.host_player_id)?.is_connected
+  const canRematch = isHost || !hostOnline
   const roundPoints = gameState?.last_round_points ?? 0
   const scoreById = useMemo(() => {
     const map = {}
@@ -96,7 +100,7 @@ export default function GameOver({ winner, winnerId, myId }) {
                 key={p.id}
                 className={`ranking-row${p.id === myId ? ' ranking-row--me' : ''}`}
               >
-                <span className="ranking-medal">{RANK_MEDALS[p.rank - 1]}</span>
+                <span className="ranking-medal">{RANK_MEDALS[p.rank - 1] ?? '🏅'}</span>
                 <span className="ranking-place">{RANK_LABELS[p.rank - 1]}</span>
                 <span className="ranking-name">{p.name}{p.id === myId ? ' (you)' : ''}</span>
                 {hasScores && (
@@ -120,7 +124,7 @@ export default function GameOver({ winner, winnerId, myId }) {
             : 'Fortune may favour you next round.'}
         </p>
 
-        {isHost ? (
+        {canRematch ? (
           <button className="btn btn--primary btn--large" onClick={rematch}>
             🔄 Play Again
           </button>

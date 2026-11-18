@@ -1,7 +1,7 @@
 /**
  * PythonDocs — camouflage screen styled as Python 3 documentation.
  * Scroll to the bottom to reveal the hidden email input in the footer.
- * Entering "uno@zenova.com" unlocks the real application.
+ * Entering the SECRET email below unlocks the real application.
  */
 
 import React, { useState, useEffect, useRef } from 'react'

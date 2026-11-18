@@ -3,7 +3,7 @@ Standard 108-card UNO deck factory.
 """
 import random
 from typing import List
-from .card import Card, Color, CardType
+from .item import Card, Color, CardType
 
 
 def create_deck() -> List[Card]:

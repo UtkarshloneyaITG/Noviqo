@@ -13,9 +13,9 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react'
-import { useGameStore, loadSession } from '../store/gameStore'
+import { useAppStore, loadSession } from '../store/appStore'
 
-const WS_URL =
+export const WS_URL =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL
     ? import.meta.env.VITE_WS_URL
     : 'wss://uno-nq5x.onrender.com/ws'
@@ -29,10 +29,10 @@ export function useWebSocket() {
   const reconnectTimer = useRef(null)
   const isMounted = useRef(true)
 
-  const handleMessage = useGameStore((s) => s.handleMessage)
-  const setConnected  = useGameStore((s) => s.setConnected)
-  const setSendMessage = useGameStore((s) => s.setSendMessage)
-  const setError      = useGameStore((s) => s.setError)
+  const handleMessage = useAppStore((s) => s.handleMessage)
+  const setConnected  = useAppStore((s) => s.setConnected)
+  const setSendMessage = useAppStore((s) => s.setSendMessage)
+  const setError      = useAppStore((s) => s.setError)
 
   // One stable sender for the lifetime of the hook: sends immediately when
   // the socket is open, otherwise queues for the next onopen flush.
@@ -62,7 +62,7 @@ export function useWebSocket() {
       // Resume identity first so the server knows who we are before any
       // queued action arrives. Live store identity wins (mid-game WS drop);
       // sessionStorage covers a full page reload.
-      const store = useGameStore.getState()
+      const store = useAppStore.getState()
       const session =
         store.playerId && store.roomId
           ? { playerId: store.playerId, roomId: store.roomId, playerName: store.playerName }

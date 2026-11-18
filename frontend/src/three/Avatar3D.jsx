@@ -1,5 +1,5 @@
 /**
- * PlayerCharacter3D — an opponent seated on a chair, holding a fan of cards.
+ * Avatar3D — an opponent seated on a chair, holding a fan of cards.
  *
  * The figure is posed procedurally (hips on the seat, thighs forward, shins
  * down, arms raised holding a card fan) so it genuinely *sits* and *holds
@@ -12,7 +12,7 @@
  */
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import Card3D from './Card3D'
+import Tile3D from './Tile3D'
 import Chair3D from './Chair3D'
 import { TABLE_TOP_Y } from './layout'
 
@@ -31,7 +31,7 @@ function HeldCards({ count, y }) {
         const off = i - mid
         const a = off * 0.17
         return (
-          <Card3D
+          <Tile3D
             key={i}
             faceDown
             liftOnHover={false}
@@ -190,7 +190,7 @@ function Body({ hue, active, offline, count }) {
   )
 }
 
-export default function PlayerCharacter3D({
+export default function Avatar3D({
   seat,
   hue = 200,
   active = false,

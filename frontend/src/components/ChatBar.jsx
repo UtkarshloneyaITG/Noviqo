@@ -4,12 +4,12 @@
  * your own message echoes here as confirmation.
  */
 import { useState } from 'react'
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
 const EMOJIS = ['👍', '😂', '😮', '😡', '🎉', '❤️', '🤔', '😎', '🔥', '👋', '😭', '🤝']
 
 export default function ChatBar() {
-  const { gameState, playerId, sendChat, bubbles } = useGameStore()
+  const { gameState, playerId, sendChat, bubbles } = useAppStore()
   const [text, setText] = useState('')
   const [showEmojis, setShowEmojis] = useState(false)
 

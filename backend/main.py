@@ -34,21 +34,65 @@ player_reconnected { type, player_name }
 import asyncio
 import json
 import logging
+import os
 import time
+from contextlib import asynccontextmanager
 from typing import Dict, Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo import AsyncMongoClient
 
-from game.room_manager import RoomManager
-from game.player import Player
+from core.channel_manager import RoomManager
+from core.member import Player
+from storage import Storage
 from websocket.connection_manager import ConnectionManager
 
 # ---------------------------------------------------------------------------
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("uno")
 
-app = FastAPI(title="UNO Multiplayer Server", version="1.0.0")
+# Local dev reads backend/.env; on Render set DB in the service's environment.
+# An already-set variable wins over .env (tests rely on that — see conftest.py).
+load_dotenv()
+
+storage: Optional[Storage] = None
+
+
+def _make_storage() -> Optional[Storage]:
+    """Storage on the database named in the DB connection string, or None
+    (pure in-memory) when DB isn't set."""
+    url = os.environ.get("DB")
+    if not url:
+        return None
+    client = AsyncMongoClient(url)
+    db = client.get_default_database(default="app")
+    return Storage(db["channels"], db["history"], client)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global storage
+    storage = _make_storage()
+    if storage is None:
+        log.warning("DB not set — state is in memory only and lost on restart")
+        yield
+        return
+
+    for game in await storage.load_all():
+        _restore(game)
+    flusher = asyncio.create_task(storage.run(room_manager))
+    try:
+        yield
+    finally:
+        flusher.cancel()
+        await storage.flush(room_manager)  # don't lose the last second on shutdown
+        await storage.close()
+        storage = None
+
+
+app = FastAPI(title="UNO Multiplayer Server", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,11 +107,14 @@ room_manager = RoomManager()
 
 # ── Per-turn countdown ──────────────────────────────────────────────────────
 TURN_SECONDS = 30
+GRACE_SECONDS = 15   # a dropped socket keeps its seat this long (refresh / blip)
+MAX_NAME_LEN = 20
 _turn_timers: Dict[str, asyncio.Task] = {}
+_grace_tasks: Dict[str, asyncio.Task] = {}
 
 
 def _schedule_turn_timer(room_id: str) -> None:
-    """(Re)start the per-room turn clock. Called after every broadcast."""
+    """(Re)start the per-room turn clock for the current turn."""
     old = _turn_timers.pop(room_id, None)
     if old:
         old.cancel()
@@ -78,29 +125,61 @@ def _schedule_turn_timer(room_id: str) -> None:
 
     secs = game.settings.get("turn_seconds", TURN_SECONDS)
     game.turn_deadline_ms = int((time.time() + secs) * 1000)
-    seq = len(game.action_log)
-    idx = game.current_player_index
-    _turn_timers[room_id] = asyncio.create_task(_turn_timeout(room_id, seq, idx, secs))
+    _turn_timers[room_id] = asyncio.create_task(_turn_timeout(room_id, secs))
 
 
-async def _turn_timeout(room_id: str, seq: int, idx: int, secs: int) -> None:
+async def _turn_timeout(room_id: str, secs: float) -> None:
     try:
         await asyncio.sleep(secs)
     except asyncio.CancelledError:
         return
+    if _turn_timers.get(room_id) is not asyncio.current_task():
+        return  # superseded by a newer turn
+    # Retire ourselves BEFORE broadcasting: the broadcast schedules the next
+    # turn's timer, which would otherwise cancel this task mid-send.
+    del _turn_timers[room_id]
 
     game = room_manager.get_room(room_id)
-    if not game or game.status.value != "playing":
-        return
-    # If anything happened (action logged) or the turn moved on, a newer timer
-    # is already in charge — do nothing.
-    if len(game.action_log) != seq or game.current_player_index != idx:
-        return
-
-    result = game.timeout_penalty()
-    if result.get("success"):
+    if game and game.timeout_penalty().get("success"):
         log.info("Turn timeout penalty applied in room %s", room_id)
+        _save(game)
         await _broadcast_game_state(room_id)
+
+
+def _save(*games) -> None:
+    """Queue rooms for the next DB flush (no-op without a DB)."""
+    if storage:
+        for g in games:
+            storage.mark(g)
+
+
+def _restore(game) -> None:
+    """Bring a saved room back after a restart. Every socket died with the
+    old process, so connected players get the normal reconnect grace."""
+    room_manager.restore_room(game)
+    for p in game.players:
+        if p.is_connected:
+            _grace_tasks[p.id] = asyncio.create_task(_expire_after_grace(p.id))
+    _schedule_turn_timer(game.room_id)  # fresh turn clock for live games
+    log.info("Restored room %s (%s)", game.room_id, game.status.value)
+
+
+def _cancel_grace(player_id: str) -> None:
+    task = _grace_tasks.pop(player_id, None)
+    if task:
+        task.cancel()
+
+
+async def _expire_after_grace(player_id: str) -> None:
+    try:
+        await asyncio.sleep(GRACE_SECONDS)
+    except asyncio.CancelledError:
+        return
+    if _grace_tasks.get(player_id) is not asyncio.current_task():
+        return
+    del _grace_tasks[player_id]
+    log.info("Player %s did not come back — removing", player_id)
+    await _depart(player_id)
 
 
 # ---------------------------------------------------------------------------
@@ -166,13 +245,20 @@ async def _dispatch(ws: WebSocket, msg: dict) -> None:
     }
     handler = handlers.get(t)
     if handler:
+        before = _room_of(ws)  # the room this socket leaves / acts in…
         try:
             await handler(ws, msg)
         except Exception as exc:
             log.exception("Handler error for type=%s: %s", t, exc)
-            await manager.send({"type": "error", "message": str(exc)}, ws)
+            await manager.send({"type": "error", "message": "Something went wrong on the server."}, ws)
+        _save(before, _room_of(ws))  # …and the one it created / joined
     else:
         await manager.send({"type": "error", "message": f"Unknown message type: {t}"}, ws)
+
+
+def _room_of(ws: WebSocket):
+    player_id = manager.get_player_id(ws)
+    return room_manager.get_room_for_player(player_id) if player_id else None
 
 
 # ---------------------------------------------------------------------------
@@ -183,35 +269,34 @@ async def _on_disconnect(ws: WebSocket) -> None:
     player_id = await manager.disconnect(ws)
     if not player_id:
         return
+    # Don't drop them yet — a page refresh or network blip reconnects within
+    # seconds (the client resumes by player_id). _join_room cancels this.
+    _cancel_grace(player_id)
+    _grace_tasks[player_id] = asyncio.create_task(_expire_after_grace(player_id))
 
-    # Check if this player is the current player BEFORE removing them
-    game_before = room_manager.get_room_for_player(player_id)
-    was_current = (
-        game_before is not None
-        and game_before.status.value == "playing"
-        and game_before.players
-        and game_before.players[game_before.current_player_index].id == player_id
-    )
+
+async def _depart(player_id: str) -> None:
+    """Take a player out of their room (leave, or grace expired) and tell the table.
+
+    Mid-game they stay seated as offline; GameState.disconnect_player
+    auto-plays their turns (or awards a default win)."""
+    game = room_manager.get_room_for_player(player_id)
+    if not game:
+        return
+    player = game._find_player(player_id)
+    name = player.name if player else "A player"
+    turn_before = game.current_player_index
 
     room_id = room_manager.remove_player(player_id)
-    if not room_id:
-        return
+    log.info("Player '%s' left room %s", name, room_id)
+    _save(game)  # saved, or deleted from the DB if the room just closed
 
-    game = room_manager.get_room(room_id)
-    if game:
-        player = game._find_player(player_id)
-        name = player.name if player else "A player"
-        log.info("Player '%s' disconnected from room %s", name, room_id)
-
-        # If it was their turn, auto-skip so the game doesn't stall
-        if was_current and game.status.value == "playing":
-            game._auto_skip_offline()
-            await _broadcast_game_state(room_id)
-
-        await _broadcast_room_state(room_id)
-        await _broadcast_to_room(
-            room_id, {"type": "player_left", "player_name": name}
+    if game.status.value != "waiting":
+        await _broadcast_game_state(
+            room_id, reset_timer=game.current_player_index != turn_before
         )
+    await _broadcast_room_state(room_id)
+    await _broadcast_to_room(room_id, {"type": "player_left", "player_name": name})
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +304,7 @@ async def _on_disconnect(ws: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 
 async def _create_room(ws: WebSocket, msg: dict) -> None:
-    player_name = (msg.get("player_name") or "").strip()
+    player_name = (msg.get("player_name") or "").strip()[:MAX_NAME_LEN]
     if not player_name:
         return await manager.send({"type": "error", "message": "player_name required."}, ws)
 
@@ -246,7 +331,7 @@ async def _create_room(ws: WebSocket, msg: dict) -> None:
 
 async def _join_room(ws: WebSocket, msg: dict) -> None:
     room_id = (msg.get("room_id") or "").strip().upper()
-    player_name = (msg.get("player_name") or "").strip()
+    player_name = (msg.get("player_name") or "").strip()[:MAX_NAME_LEN]
     existing_player_id: Optional[str] = msg.get("player_id")
 
     if not room_id or not player_name:
@@ -264,6 +349,7 @@ async def _join_room(ws: WebSocket, msg: dict) -> None:
     if existing_player_id:
         existing = game._find_player(existing_player_id)
         if existing and game.reconnect_player(existing_player_id):
+            _cancel_grace(existing_player_id)
             room_manager.register_player_in_room(existing_player_id, room_id)
             manager.register(ws, existing_player_id, room_id)
             log.info("Player '%s' reconnected to room %s", existing.name, room_id)
@@ -277,9 +363,9 @@ async def _join_room(ws: WebSocket, msg: dict) -> None:
                 },
                 ws,
             )
-            if game.status.value == "playing":
-                state = game.get_state_for_player(existing_player_id)
-                await manager.send({"type": "game_state", "state": state}, ws)
+            if game.status.value != "waiting":
+                # Everyone (incl. the returner) sees them back online.
+                await _broadcast_game_state(room_id, reset_timer=False)
 
             await _broadcast_to_room(
                 room_id,
@@ -383,7 +469,8 @@ async def _call_uno(ws: WebSocket, _msg: dict) -> None:
     if not result["success"]:
         return await manager.send({"type": "error", "message": result["error"]}, ws)
 
-    await _broadcast_game_state(game.room_id)
+    # Not a turn action — must not extend the current player's clock.
+    await _broadcast_game_state(game.room_id, reset_timer=False)
 
 
 async def _catch_uno(ws: WebSocket, msg: dict) -> None:
@@ -397,7 +484,7 @@ async def _catch_uno(ws: WebSocket, msg: dict) -> None:
     if not result["success"]:
         return await manager.send({"type": "error", "message": result["error"]}, ws)
 
-    await _broadcast_game_state(game.room_id)
+    await _broadcast_game_state(game.room_id, reset_timer=False)
 
 
 async def _challenge_wild4(ws: WebSocket, _msg: dict) -> None:
@@ -436,17 +523,8 @@ async def _leave_room(ws: WebSocket, _msg: dict) -> None:
     player_id = manager.get_player_id(ws)
     if not player_id:
         return
-
-    game = room_manager.get_room_for_player(player_id)
-    player = game._find_player(player_id) if game else None
-    name = player.name if player else "A player"
-
-    room_id = room_manager.remove_player(player_id)
     manager.unbind_player(player_id)
-
-    if room_id:
-        await _broadcast_to_room(room_id, {"type": "player_left", "player_name": name})
-        await _broadcast_room_state(room_id)
+    await _depart(player_id)
 
 
 async def _rematch(ws: WebSocket, _msg: dict) -> None:
@@ -509,9 +587,11 @@ async def _kick_player(ws: WebSocket, msg: dict) -> None:
         return await manager.send({"type": "error", "message": "Not in a room."}, ws)
 
     target_id: str = msg.get("target_id", "")
+    turn_before = game.current_player_index
     result = game.kick_player(player_id, target_id)
     if not result["success"]:
         return await manager.send({"type": "error", "message": result["error"]}, ws)
+    _cancel_grace(target_id)
 
     await manager.send_to_player(
         {"type": "kicked", "message": "You were removed from the room by the host."},
@@ -526,20 +606,26 @@ async def _kick_player(ws: WebSocket, msg: dict) -> None:
     )
     await _broadcast_room_state(game.room_id)
     if game.status.value in ("playing", "finished"):
-        await _broadcast_game_state(game.room_id)
+        await _broadcast_game_state(
+            game.room_id, reset_timer=game.current_player_index != turn_before
+        )
 
 
 # ---------------------------------------------------------------------------
 # Broadcast helpers
 # ---------------------------------------------------------------------------
 
-async def _broadcast_game_state(room_id: str) -> None:
-    """Send a personalised game_state message to every player in a room."""
+async def _broadcast_game_state(room_id: str, reset_timer: bool = True) -> None:
+    """Send a personalised game_state message to every player in a room.
+
+    reset_timer=True starts a fresh turn clock (use after turn actions);
+    False keeps the running one (UNO calls, catches, reconnects)."""
     game = room_manager.get_room(room_id)
     if not game:
         return
     # Reset the turn clock first so the broadcast carries the fresh deadline.
-    _schedule_turn_timer(room_id)
+    if reset_timer or room_id not in _turn_timers:
+        _schedule_turn_timer(room_id)
     messages = {
         p.id: {"type": "game_state", "state": game.get_state_for_player(p.id)}
         for p in game.players

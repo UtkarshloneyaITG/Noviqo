@@ -1,5 +1,5 @@
 /**
- * PlayerHand3D — the local player's hand, an arced fan of face-up 3D cards
+ * Tray3D — the local player's hand, an arced fan of face-up 3D cards
  * floating at the near edge of the table. Playable cards glow and lift;
  * clicking one plays it (wilds open the colour picker via the store).
  *
@@ -8,13 +8,14 @@
 import { useMemo } from 'react'
 import { Html } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
-import { useGameStore } from '../store/gameStore'
-import Card3D from './Card3D'
+import { useAppStore } from '../store/appStore'
+import Tile3D from './Tile3D'
 import { TABLE_TOP_Y } from './layout'
 
 const NARROW_PX = 640 // below this, grow cards so touch targets stay tappable
 
-function isCardPlayable(card, gameState) {
+// Mirrors the backend's play_card validation (core/session.py).
+export function isCardPlayable(card, gameState) {
   if (!gameState || gameState.status !== 'playing') return false
   const top = gameState.discard_top
   if (!top) return false
@@ -43,7 +44,7 @@ const HAND_Z = 6.1
 const HAND_Y = TABLE_TOP_Y + 1.0
 const TILT = -0.46 // lean cards back toward the camera
 
-export default function PlayerHand3D({ hidden = false }) {
+export default function Tray3D({ hidden = false }) {
   const {
     gameState,
     playerId,
@@ -53,7 +54,7 @@ export default function PlayerHand3D({ hidden = false }) {
     challengeWildFour,
     actionPending,
     connectionPhase,
-  } = useGameStore()
+  } = useAppStore()
 
   const canvasWidth = useThree((s) => s.size.width)
   const narrow = canvasWidth < NARROW_PX
@@ -99,7 +100,7 @@ export default function PlayerHand3D({ hidden = false }) {
         const z = HAND_Z + i * DEPTH_STEP + (highlight ? 0.3 : 0)
 
         return (
-          <Card3D
+          <Tile3D
             key={card.id}
             card={card}
             playable={highlight}

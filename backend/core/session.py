@@ -2,21 +2,25 @@
 Core UNO game state and authoritative rule engine.
 
 Supports:
-  • 2-5 players
+  • 2-7 players, multi-place finishing (play continues until one is left)
   • All standard card effects (Skip, Reverse, Draw Two, Wild, Wild Draw Four)
-  • Draw-card stacking (house rule — any Draw Two or Wild Draw Four can stack)
+  • Optional draw-card stacking (`stack_draw_cards` room setting)
   • Wild Draw Four challenge
   • UNO-call tracking and catch-penalty
   • Turn-after-draw: player may play the card they just drew, or pass
   • Reconnection-aware player state
 """
 import random
+import time
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
-from .card import Card, Color, CardType
-from .deck import create_deck
-from .player import Player
+from .item import Card, Color, CardType
+from .pool import create_deck
+from .member import Player
+
+
+ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th"]
 
 
 class GameStatus(str, Enum):
@@ -35,7 +39,7 @@ class GameState:
         self.direction: int = 1               # +1 = clockwise, -1 = counter-clockwise
         self.status: GameStatus = GameStatus.WAITING
         self.current_color: Optional[Color] = None
-        self.previous_color: Optional[Color] = None   # colour before last wild
+        self.wild_four_illegal: bool = False  # last +4 player held the old colour
         self.draw_stack: int = 0              # accumulated draw penalty
         self.winner: Optional[str] = None
         self.winner_id: Optional[str] = None
@@ -60,6 +64,56 @@ class GameState:
         self.settings: dict = {"turn_seconds": 30, "stack_draw_cards": False}
         # Players the host kicked — blocked from reconnecting by player_id
         self.kicked_player_ids: Set[str] = set()
+        # Set by storage once this round's result is in the history collection
+        self.history_logged: bool = False
+
+    # ------------------------------------------------------------------
+    # Persistence (plain-data snapshot; storage.py does the I/O)
+    # ------------------------------------------------------------------
+
+    _SET_FIELDS = ("uno_called", "finished_player_ids", "kicked_player_ids")
+
+    def to_doc(self) -> dict:
+        """Every field as JSON/BSON-safe data. Containers are copied so the
+        snapshot can't change while it's being written."""
+        doc = dict(vars(self))
+        doc["players"] = [
+            {"id": p.id, "name": p.name, "is_connected": p.is_connected,
+             "hand": [c.to_dict() for c in p.hand]}
+            for p in self.players
+        ]
+        doc["deck"] = [c.to_dict() for c in self.deck]
+        doc["discard_pile"] = [c.to_dict() for c in self.discard_pile]
+        doc["status"] = self.status.value
+        doc["current_color"] = self.current_color.value if self.current_color else None
+        for k in self._SET_FIELDS:
+            doc[k] = sorted(doc[k])
+        doc["placements"] = [dict(p) for p in self.placements]
+        doc["action_log"] = list(self.action_log)
+        doc["scores"] = dict(self.scores)
+        doc["settings"] = dict(self.settings)
+        return doc
+
+    @classmethod
+    def from_doc(cls, doc: dict) -> "GameState":
+        """Inverse of to_doc. Unknown keys are ignored and missing ones keep
+        their defaults, so docs saved by older/newer code still load."""
+        g = cls(doc["room_id"])
+        for k, v in doc.items():
+            if k in vars(g):
+                setattr(g, k, v)
+        g.players = [
+            Player(name=p["name"], id=p["id"], is_connected=p["is_connected"],
+                   hand=[Card.from_dict(c) for c in p["hand"]])
+            for p in doc.get("players", [])
+        ]
+        g.deck = [Card.from_dict(c) for c in doc.get("deck", [])]
+        g.discard_pile = [Card.from_dict(c) for c in doc.get("discard_pile", [])]
+        g.status = GameStatus(doc.get("status", "waiting"))
+        g.current_color = Color(doc["current_color"]) if doc.get("current_color") else None
+        for k in cls._SET_FIELDS:
+            setattr(g, k, set(doc.get(k, [])))
+        return g
 
     # ------------------------------------------------------------------
     # Room management
@@ -96,9 +150,12 @@ class GameState:
         return False
 
     def disconnect_player(self, player_id: str) -> None:
+        """Mark a player gone. Every departure path (socket drop, leave,
+        kick) routes through here, so the game never stalls on their turn."""
         p = self._find_player(player_id)
         if p:
             p.is_connected = False
+            self._auto_skip_offline()
 
     # ------------------------------------------------------------------
     # Game start
@@ -106,8 +163,8 @@ class GameState:
 
     def start_game(self) -> dict:
         """Initialise the deck, deal cards, and begin play."""
-        if self.status == GameStatus.PLAYING:
-            return {"success": False, "error": "Game already in progress."}
+        if self.status != GameStatus.WAITING:
+            return {"success": False, "error": "Game already in progress or finished."}
         if len(self.players) < 2:
             return {"success": False, "error": "Need at least 2 players to start."}
         if len(self.players) > 7:
@@ -116,6 +173,7 @@ class GameState:
         # Reset game state (cumulative `scores` deliberately survives)
         self.last_round_points = 0
         self.round_points_awarded = False
+        self.history_logged = False
         self.deck = create_deck()
         self.discard_pile = []
         self.current_player_index = 0
@@ -161,17 +219,14 @@ class GameState:
             self._log(f"Opening card is Skip — {first.name} is skipped.")
 
         elif card.card_type == CardType.REVERSE:
-            if len(self.players) == 2:
-                # Acts as Skip: first player goes again (no advance)
-                self._log(f"Opening card is Reverse — {first.name} plays again.")
-            else:
-                self.direction = -1
-                # In multi-player, last seat (counter-clockwise from 0) goes first
-                self._advance_turn()
-                self._log(
-                    f"Opening card is Reverse — direction reversed, "
-                    f"{self.players[self.current_player_index].name} starts."
-                )
+            # The dealer (last seat) starts and play runs the other way. With
+            # 2 players that is the opponent — i.e. Reverse acts as Skip.
+            self.direction = -1
+            self._advance_turn()
+            self._log(
+                f"Opening card is Reverse — direction reversed, "
+                f"{self.players[self.current_player_index].name} starts."
+            )
 
         elif card.card_type == CardType.DRAW_TWO:
             self._draw_for_player(first, 2)
@@ -208,7 +263,7 @@ class GameState:
         self.current_player_index = 0
         self.direction = 1
         self.current_color = None
-        self.previous_color = None
+        self.wild_four_illegal = False
         self.draw_stack = 0
         self.uno_called = set()
         self.drawn_card_id = None
@@ -242,10 +297,9 @@ class GameState:
             {"success": True}  on success
             {"success": False, "error": "..."}  on failure
         """
+        if err := self._turn_error(player_id):
+            return err
         current = self.players[self.current_player_index]
-
-        if current.id != player_id:
-            return {"success": False, "error": "It's not your turn."}
 
         card = next((c for c in current.hand if c.id == card_id), None)
         if not card:
@@ -294,47 +348,25 @@ class GameState:
         current.hand.remove(card)
         self.discard_pile.append(card)
         self.drawn_card_id = None  # drawn-card tracking is cleared on any play
+        self.uno_called.discard(current.id)  # UNO must be called afresh at 1 card
 
         # ── Placement / win condition ────────────────────────────────
-        if len(current.hand) == 0:
+        if not current.hand:
             rank = len(self.placements) + 1
-            ordinal = ["1st", "2nd", "3rd", "4th", "5th", "6th"][rank - 1]
             self.placements.append({"rank": rank, "id": current.id, "name": current.name})
             self.finished_player_ids.add(current.id)
-            self.skipped_player_id = None
-            self._log(f"🎉 {current.name} finishes in {ordinal} place!")
+            self._log(f"🎉 {current.name} finishes in {ORDINALS[rank - 1]} place!")
 
             # Round points are snapshotted the moment the first player goes
             # out — continuation play for 2nd/3rd place can't distort them.
             if rank == 1:
                 self._award_round_points(current.id)
 
-            # Count remaining active players
-            active = [p for p in self.players if p.id not in self.finished_player_ids]
-
-            if len(active) <= 1:
-                # Game over — last standing player gets last place
-                if active:
-                    last_rank = len(self.placements) + 1
-                    self.placements.append(
-                        {"rank": last_rank, "id": active[0].id, "name": active[0].name}
-                    )
-                    self.finished_player_ids.add(active[0].id)
-                self.status = GameStatus.FINISHED
-                self.winner = self.placements[0]["name"]
-                self.winner_id = self.placements[0]["id"]
-                self._log(f"🏆 Game over! {self.winner} takes the crown!")
+            if self._active_count() <= 1:
+                self._end_game()
                 return {"success": True, "game_over": True}
-
-            # Game continues — advance to next active player
-            self._advance_turn()
-            self._auto_skip_offline()
-            return {"success": True}
-
-        # If player played down to 1 card, remove them from uno_called
-        # (they must call UNO themselves each time)
-        if current.id in self.uno_called and len(current.hand) != 1:
-            self.uno_called.discard(current.id)
+            # Play continues: the last card still takes effect below
+            # (colour change, skip, +2/+4 for the next active player).
 
         self._apply_card_effects(card, current, chosen_color)
         self._auto_skip_offline()
@@ -363,8 +395,8 @@ class GameState:
             self.current_color = card.color
             self.skipped_player_id = None
             self.direction *= -1
-            if len(self.players) == 2:
-                # Reverse acts as Skip in a 2-player game
+            if player.id not in self.finished_player_ids and self._active_count() == 2:
+                # Reverse acts as Skip when only two players are still in
                 self._log(f"{name} played Reverse — {name} plays again!")
             else:
                 self._advance_turn()
@@ -381,7 +413,6 @@ class GameState:
             )
 
         elif card.card_type == CardType.WILD:
-            self.previous_color = self.current_color
             self.current_color = Color(chosen_color)
             self.skipped_player_id = None
             self.challenge_available = False
@@ -390,7 +421,11 @@ class GameState:
 
         elif card.card_type == CardType.WILD_DRAW_FOUR:
             was_stacked = self.draw_stack > 0
-            self.previous_color = self.current_color
+            # Judge legality NOW: a +4 is illegal if the player held a card of
+            # the colour in play. Cards they draw later must not count.
+            self.wild_four_illegal = any(
+                not c.is_wild() and c.color == self.current_color for c in player.hand
+            )
             self.current_color = Color(chosen_color)
             self.skipped_player_id = None
             self.draw_stack += 4
@@ -416,10 +451,9 @@ class GameState:
         Returns:
             dict with keys: success, drawn_card / drawn_cards, can_play, turn_ends
         """
+        if err := self._turn_error(player_id):
+            return err
         current = self.players[self.current_player_index]
-
-        if current.id != player_id:
-            return {"success": False, "error": "It's not your turn."}
 
         # --- Draw the full stack penalty ---
         if self.draw_stack > 0:
@@ -436,22 +470,18 @@ class GameState:
                 "turn_ends": True,
             }
 
-        # --- Normal single draw ---
-        if not self.deck:
-            self._reshuffle()
-        if not self.deck:
-            # Deck is truly empty — pass turn
+        # --- Normal single draw (one per turn) ---
+        if self.drawn_card_id:
+            return {"success": False, "error": "You already drew — play that card or pass."}
+
+        drawn = self._draw_for_player(current, 1)
+        if not drawn:
+            # Deck and discard are both exhausted — pass turn
             self._advance_turn()
             self._auto_skip_offline()
             return {"success": True, "no_cards": True, "turn_ends": True}
 
-        card = self.deck.pop()
-        current.hand.append(card)
-        # Top the pile back up immediately if that was the last card, so the
-        # reported draw_pile_count never reads 0 while cards remain to recycle.
-        if not self.deck:
-            self._reshuffle()
-
+        card = drawn[0]
         can_play = card.can_play_on(self.discard_pile[-1], self.current_color)
 
         if can_play:
@@ -481,10 +511,9 @@ class GameState:
     # ------------------------------------------------------------------
 
     def pass_turn(self, player_id: str) -> dict:
+        if err := self._turn_error(player_id):
+            return err
         current = self.players[self.current_player_index]
-
-        if current.id != player_id:
-            return {"success": False, "error": "It's not your turn."}
         if not self.drawn_card_id:
             return {"success": False, "error": "Nothing to pass — you haven't drawn a card."}
 
@@ -537,13 +566,7 @@ class GameState:
             self.remove_player(target_id)
             return {"success": True, "removed": True, "player_name": target.name}
 
-        was_current = (
-            self.status == GameStatus.PLAYING
-            and self.players[self.current_player_index].id == target_id
-        )
         self.disconnect_player(target_id)
-        if was_current:
-            self._auto_skip_offline()
         return {"success": True, "removed": False, "player_name": target.name}
 
     # ------------------------------------------------------------------
@@ -571,11 +594,15 @@ class GameState:
     # ------------------------------------------------------------------
 
     def call_uno(self, player_id: str) -> dict:
+        if self.status != GameStatus.PLAYING:
+            return {"success": False, "error": "The game is not in progress."}
         player = self._find_player(player_id)
         if not player:
             return {"success": False, "error": "Player not found."}
         if len(player.hand) != 1:
             return {"success": False, "error": "UNO can only be called with exactly 1 card."}
+        if player_id in self.uno_called:
+            return {"success": True}  # already called — don't spam the log
 
         self.uno_called.add(player_id)
         self._log(f"{player.name} called UNO!")
@@ -586,6 +613,10 @@ class GameState:
         Caller accuses target of not calling UNO.
         If valid, target draws 2 cards as penalty.
         """
+        if self.status != GameStatus.PLAYING:
+            return {"success": False, "error": "The game is not in progress."}
+        if caller_id == target_id:
+            return {"success": False, "error": "You cannot catch yourself."}
         target = self._find_player(target_id)
         caller = self._find_player(caller_id)
         if not target or not caller:
@@ -616,10 +647,9 @@ class GameState:
           • If the challenger had a card matching the previous colour → challenge succeeds
             (the Wild Draw Four player draws 4, challenger keeps their turn)
         """
+        if err := self._turn_error(player_id):
+            return err
         current = self.players[self.current_player_index]
-
-        if current.id != player_id:
-            return {"success": False, "error": "It's not your turn."}
         if not self.challenge_available:
             return {"success": False, "error": "No Wild Draw Four to challenge."}
 
@@ -629,13 +659,7 @@ class GameState:
 
         self.challenge_available = False
 
-        # Did the challenged player have a legal card of the previous colour?
-        had_legal = any(
-            not c.is_wild() and c.color == self.previous_color
-            for c in challenged.hand
-        )
-
-        if had_legal:
+        if self.wild_four_illegal:
             # Challenge succeeds — Wild Draw Four player draws 4
             drawn = self._draw_for_player(challenged, 4)
             self.draw_stack = 0
@@ -686,6 +710,11 @@ class GameState:
             "drawn_card_id": self.drawn_card_id,
             "skipped_player_id": self.skipped_player_id,
             "turn_deadline": self.turn_deadline_ms,
+            # Relative, so client/server clock skew doesn't matter.
+            "turn_ms_left": (
+                max(0, self.turn_deadline_ms - int(time.time() * 1000))
+                if self.turn_deadline_ms else None
+            ),
             "placements": list(self.placements),
             "last_round_points": self.last_round_points,
             "rounds_played": self.rounds_played,
@@ -750,6 +779,32 @@ class GameState:
             return None
         return next((p for p in self.players if p.id == player_id), None)
 
+    def _turn_error(self, player_id: str) -> Optional[dict]:
+        """Shared guard for turn actions: game must be live and it's your turn."""
+        if self.status != GameStatus.PLAYING:
+            return {"success": False, "error": "The game is not in progress."}
+        if self.players[self.current_player_index].id != player_id:
+            return {"success": False, "error": "It's not your turn."}
+        return None
+
+    def _active_count(self) -> int:
+        """Players still holding cards (not yet placed)."""
+        return sum(1 for p in self.players if p.id not in self.finished_player_ids)
+
+    def _end_game(self) -> None:
+        """Rank everyone still holding cards (seat order) and finish the game."""
+        for p in self.players:
+            if p.id not in self.finished_player_ids:
+                self.placements.append(
+                    {"rank": len(self.placements) + 1, "id": p.id, "name": p.name}
+                )
+                self.finished_player_ids.add(p.id)
+        self.status = GameStatus.FINISHED
+        self.winner = self.placements[0]["name"]
+        self.winner_id = self.placements[0]["id"]
+        self._award_round_points(self.winner_id)
+        self._log(f"🏆 Game over! {self.winner} takes the crown!")
+
     def _award_round_points(self, winner_id: str) -> None:
         """
         Classic UNO scoring: the round winner collects the point value of
@@ -789,6 +844,8 @@ class GameState:
         play. The pile is then topped back up so its count stays accurate.
         """
         drawn: List[Card] = []
+        # A growing hand voids any earlier UNO call (they must call it again).
+        self.uno_called.discard(player.id)
         for _ in range(count):
             if not self.deck:
                 self._reshuffle()
@@ -838,35 +895,19 @@ class GameState:
 
         # If only 1 active player remains (regardless of connection), end game
         if len(active_players) <= 1:
-            if active_players:
-                last_rank = len(self.placements) + 1
-                last = active_players[0]
-                self.placements.append({"rank": last_rank, "id": last.id, "name": last.name})
-                self.finished_player_ids.add(last.id)
-            self.status    = GameStatus.FINISHED
-            self.winner    = self.placements[0]["name"]
-            self.winner_id = self.placements[0]["id"]
-            self._award_round_points(self.winner_id)
-            self._log(f"🏆 Game over! {self.winner} takes the crown!")
+            self._end_game()
             return True
 
-        # Last online active player wins (others are all offline)
-        if len(online_active) == 1 and len(active_players) > 1:
+        # Last online active player wins (others are all offline); the
+        # offline players are ranked after them.
+        if len(online_active) == 1:
             winner = online_active[0]
-            rank = len(self.placements) + 1
-            self.placements.append({"rank": rank, "id": winner.id, "name": winner.name})
+            self.placements.append(
+                {"rank": len(self.placements) + 1, "id": winner.id, "name": winner.name}
+            )
             self.finished_player_ids.add(winner.id)
-            # Remaining offline players get subsequent ranks
-            for p in active_players:
-                if p.id not in self.finished_player_ids:
-                    r = len(self.placements) + 1
-                    self.placements.append({"rank": r, "id": p.id, "name": p.name})
-                    self.finished_player_ids.add(p.id)
-            self.status    = GameStatus.FINISHED
-            self.winner    = self.placements[0]["name"]
-            self.winner_id = self.placements[0]["id"]
-            self._award_round_points(self.winner_id)
             self._log(f"🏆 {winner.name} wins — all other active players disconnected!")
+            self._end_game()
             return True
 
         # Skip the current player if they are offline

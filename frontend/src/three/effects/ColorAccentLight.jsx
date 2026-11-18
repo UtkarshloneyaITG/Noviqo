@@ -6,7 +6,7 @@
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { ACTIVE_COLOR_HEX } from '../cardTextures'
+import { ACTIVE_COLOR_HEX } from '../tileTextures'
 
 const FALLBACK = '#ffd84d'
 const target = new THREE.Color()

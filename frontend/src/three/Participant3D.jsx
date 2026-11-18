@@ -1,17 +1,17 @@
 /**
- * Opponent3D — one opponent seated on a chair around the table, holding their
+ * Participant3D — one opponent seated on a chair around the table, holding their
  * cards, with a floating HTML nameplate (avatar, name, card count, turn glow,
  * UNO badge, and a "Catch!" button when they fail to call UNO).
  */
 import { useState, useEffect, useRef } from 'react'
 import { Html } from '@react-three/drei'
-import { useGameStore } from '../store/gameStore'
-import PlayerCharacter3D from './PlayerCharacter3D'
+import { useAppStore } from '../store/appStore'
+import Avatar3D from './Avatar3D'
 import { TABLE_TOP_Y } from './layout'
 
-export default function Opponent3D({ player, seat, hue = 200, isCurrentTurn, dealing = false }) {
-  const { playerId, catchUno } = useGameStore()
-  const bubble = useGameStore((s) => s.bubbles?.[player.id])
+export default function Participant3D({ player, seat, hue = 200, isCurrentTurn, dealing = false }) {
+  const { playerId, catchUno } = useAppStore()
+  const bubble = useAppStore((s) => s.bubbles?.[player.id])
   const [showCatch, setShowCatch] = useState(false)
   const timerRef = useRef(null)
 
@@ -35,7 +35,7 @@ export default function Opponent3D({ player, seat, hue = 200, isCurrentTurn, dea
   return (
     <group>
       {/* Seated 3D character on a chair, holding their cards */}
-      <PlayerCharacter3D
+      <Avatar3D
         seat={seat}
         hue={hue}
         active={isCurrentTurn}

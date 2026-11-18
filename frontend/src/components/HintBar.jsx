@@ -2,10 +2,10 @@
  * HintBar — contextual guidance strip above the player hand.
  * Tells the player exactly what they can / should do right now.
  */
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
 export default function HintBar() {
-  const { gameState, playerId } = useGameStore()
+  const { gameState, playerId } = useAppStore()
 
   if (!gameState || gameState.status !== 'playing') return null
 

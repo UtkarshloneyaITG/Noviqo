@@ -5,8 +5,8 @@ import random
 import string
 from typing import Dict, Optional, List
 
-from .game_state import GameState
-from .player import Player
+from .session import GameState
+from .member import Player
 
 
 class RoomManager:
@@ -88,7 +88,17 @@ class RoomManager:
                 del self._rooms[room_id]
         elif game:
             game.disconnect_player(player_id)
+            # Nobody left at a live/finished table — free the room.
+            if not any(p.is_connected for p in game.players):
+                self.delete_room(room_id)
         return room_id
+
+    def restore_room(self, game: GameState) -> None:
+        """Re-register a room loaded from storage (server restart)."""
+        self._rooms[game.room_id] = game
+        for p in game.players:
+            if p.id not in game.kicked_player_ids:
+                self._player_room[p.id] = game.room_id
 
     def register_player_in_room(self, player_id: str, room_id: str) -> None:
         """Register the player->room mapping (after reconnect)."""
@@ -111,7 +121,7 @@ class RoomManager:
                 "players": [p.name for p in g.players],
             }
             for rid, g in self._rooms.items()
-            if g.status.value == "waiting"
+            if g.status.value == "waiting" and len(g.players) < 7
         ]
 
     def _unique_id(self) -> str:

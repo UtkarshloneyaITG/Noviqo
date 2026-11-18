@@ -1,12 +1,12 @@
 /**
- * GameHud — screen-space HUD shown over the 3D table during play:
+ * Toolbar — screen-space HUD shown over the 3D table during play:
  * room code, whose-turn banner, and the Leave button. (The 3D world
  * behind it stays fully orbit-controllable; only these chips capture clicks.)
  */
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
 
-export default function GameHud() {
-  const { gameState, playerId, leaveRoom } = useGameStore()
+export default function Toolbar() {
+  const { gameState, playerId, leaveRoom } = useAppStore()
   if (!gameState || gameState.status !== 'playing') return null
 
   const { players = [], current_player_id, room_id } = gameState

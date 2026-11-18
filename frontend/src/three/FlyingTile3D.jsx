@@ -1,5 +1,5 @@
 /**
- * FlyingCard3D — animates a card from a start transform to the table.
+ * FlyingTile3D — animates a card from a start transform to the table.
  *
  * Two modes:
  *  • Direct (draws): a quick arc from the deck to the player.
@@ -9,7 +9,7 @@
  */
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import Card3D from './Card3D'
+import Tile3D from './Tile3D'
 
 const DIRECT_DUR = 0.55
 const REVEAL_DUR = 1.15
@@ -21,7 +21,7 @@ const lerp = (a, b, t) => a + (b - a) * t
 const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
-export default function FlyingCard3D({
+export default function FlyingTile3D({
   card,
   faceDown = false,
   from,
@@ -87,7 +87,7 @@ export default function FlyingCard3D({
 
   return (
     <group ref={ref} position={from} rotation={fromRot} scale={BASE_SCALE}>
-      <Card3D card={card} faceDown={faceDown} liftOnHover={false} />
+      <Tile3D card={card} faceDown={faceDown} liftOnHover={false} />
     </group>
   )
 }

@@ -1,5 +1,5 @@
 /**
- * WinConfetti3D — one THREE.Points burst of falling confetti above the
+ * Confetti3D — one THREE.Points burst of falling confetti above the
  * table when the game ends. All positions/velocities live in pre-allocated
  * Float32Arrays mutated in useFrame — no per-frame allocation.
  */
@@ -11,7 +11,7 @@ const COUNT = 250
 const DUR = 4
 const PALETTE = ['#f0d060', '#f04468', '#5294ff', '#20ee86', '#f5b820', '#b060ff', '#ff8040']
 
-export default function WinConfetti3D({ origin = [0, 8, 0], onDone }) {
+export default function Confetti3D({ origin = [0, 8, 0], onDone }) {
   const points = useRef()
   const elapsed = useRef(0)
   const done = useRef(false)

@@ -1,5 +1,5 @@
 /**
- * Lobby3D — the pre-game lobby presented inside the 3D world.
+ * Entry3D — the pre-game lobby presented inside the 3D world.
  *
  * A floating 3D "UNO" wordmark hovers over the table while the create/join
  * forms (and the waiting room) live in an in-scene HTML panel. All store
@@ -7,13 +7,10 @@
  */
 import { Suspense, useState, useEffect } from 'react'
 import { Float, Text, Html } from '@react-three/drei'
-import { useGameStore } from '../store/gameStore'
+import { useAppStore } from '../store/appStore'
+import { WS_URL } from '../hooks/useWebSocket'
 import { TABLE_TOP_Y } from './layout'
 
-const WS_URL =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL
-    ? import.meta.env.VITE_WS_URL
-    : 'wss://uno-nq5x.onrender.com/ws'
 const ROOMS_BASE = WS_URL.replace(/^ws/, 'http').replace(/\/ws$/, '')
 
 const TURN_OPTIONS = [15, 30, 60]
@@ -33,7 +30,7 @@ function LobbyPanel() {
     leaveRoom,
     updateSettings,
     kickPlayer,
-  } = useGameStore()
+  } = useAppStore()
 
   const [tab, setTab] = useState('create')
   const [name, setName] = useState(playerName || '')
@@ -237,7 +234,7 @@ function LobbyPanel() {
   )
 }
 
-export default function Lobby3D() {
+export default function Entry3D() {
   return (
     <group>
       {/* Floating 3D wordmark above the table (isolated so a slow font
