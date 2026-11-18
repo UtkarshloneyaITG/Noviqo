@@ -80,6 +80,10 @@ class ConnectionManager:
     def get_ws(self, player_id: str) -> Optional[WebSocket]:
         return self._player_to_ws.get(player_id)
 
+    def player_ids(self) -> List[str]:
+        """Every player/account with a live socket."""
+        return list(self._player_to_ws)
+
     # ------------------------------------------------------------------
     # Messaging
     # ------------------------------------------------------------------

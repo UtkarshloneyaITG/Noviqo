@@ -3,10 +3,10 @@
  * floating at the near edge of the table. Playable cards glow and lift;
  * clicking one plays it (wilds open the colour picker via the store).
  *
- * Action buttons (Pass / Challenge / UNO) ride along as an HTML strip.
+ * The action buttons (Pass / Challenge / UNO) live in the screen-space
+ * HintBar, so the hand needs no in-scene HTML.
  */
 import { useMemo } from 'react'
-import { Html } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useAppStore } from '../store/appStore'
 import Tile3D from './Tile3D'
@@ -45,26 +45,17 @@ const HAND_Y = TABLE_TOP_Y + 1.0
 const TILT = -0.46 // lean cards back toward the camera
 
 export default function Tray3D({ hidden = false }) {
-  const {
-    gameState,
-    playerId,
-    selectCard,
-    passTurn,
-    callUno,
-    challengeWildFour,
-    actionPending,
-    connectionPhase,
-  } = useAppStore()
+  const gameState = useAppStore((s) => s.gameState)
+  const playerId = useAppStore((s) => s.playerId)
+  const selectCard = useAppStore((s) => s.selectCard)
+  const locked = useAppStore((s) => s.actionPending || s.connectionPhase !== 'online')
 
   const canvasWidth = useThree((s) => s.size.width)
   const narrow = canvasWidth < NARROW_PX
 
   const hand = gameState?.my_hand || []
-  const locked = actionPending || connectionPhase !== 'online'
   const isMyTurn = gameState?.current_player_id === playerId
-  const drawnCardId = gameState?.drawn_card_id
-  const myData = gameState?.players?.find((p) => p.id === playerId)
-  const hasCalledUno = myData?.has_called_uno
+  const myBack = gameState?.players?.find((p) => p.id === playerId)?.card_back
 
   const playable = useMemo(() => {
     if (!isMyTurn) return new Set()
@@ -103,6 +94,7 @@ export default function Tray3D({ hidden = false }) {
           <Tile3D
             key={card.id}
             card={card}
+            back={myBack}
             playable={highlight}
             dimmed={isMyTurn && !isPlayable}
             onClick={highlight ? () => selectCard(card) : undefined}
@@ -113,32 +105,6 @@ export default function Tray3D({ hidden = false }) {
           />
         )
       })}
-
-      {/* Action strip just under the hand */}
-      <Html position={[0, HAND_Y - 1.0, HAND_Z + 0.6]} center distanceFactor={10}>
-        <div className="hand3d-actions">
-          <span className="hand3d-count">
-            {count} card{count === 1 ? '' : 's'} {isMyTurn ? '· your turn' : ''}
-          </span>
-          <div className="hand3d-buttons">
-            {isMyTurn && drawnCardId && (
-              <button className="btn btn--pass" disabled={locked} onClick={passTurn}>
-                Pass Turn
-              </button>
-            )}
-            {isMyTurn && gameState.challenge_available && (
-              <button className="btn btn--challenge" disabled={locked} onClick={() => challengeWildFour()}>
-                ⚡ Challenge!
-              </button>
-            )}
-            {count === 1 && !hasCalledUno && (
-              <button className="uno-btn uno-btn--3d" onClick={callUno}>
-                UNO!
-              </button>
-            )}
-          </div>
-        </div>
-      </Html>
     </group>
   )
 }

@@ -18,7 +18,15 @@ const REVEAL_SCALE = 1.5
 const BASE_SCALE = 1.08
 
 const lerp = (a, b, t) => a + (b - a) * t
-const lerp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+// Writes into a shared scratch array — no allocation per frame.
+const lerp3 = (out, a, b, t) => {
+  out[0] = lerp(a[0], b[0], t)
+  out[1] = lerp(a[1], b[1], t)
+  out[2] = lerp(a[2], b[2], t)
+  return out
+}
+const POS = [0, 0, 0]
+const ROT = [0, 0, 0]
 const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
 export default function FlyingTile3D({
@@ -32,6 +40,7 @@ export default function FlyingTile3D({
   viaRot = [-0.22, 0, 0],
   delay = 0,
   arc = ARC_HEIGHT,
+  back,
   onDone,
 }) {
   const ref = useRef()
@@ -54,8 +63,8 @@ export default function FlyingTile3D({
       // up → hold → down
       if (tt < 0.38) {
         const e = ease(tt / 0.38)
-        pos = lerp3(from, via, e)
-        rot = lerp3(fromRot, viaRot, e)
+        pos = lerp3(POS, from, via, e)
+        rot = lerp3(ROT, fromRot, viaRot, e)
         scale = lerp(BASE_SCALE, REVEAL_SCALE, e)
       } else if (tt < 0.58) {
         pos = via
@@ -63,15 +72,15 @@ export default function FlyingTile3D({
         scale = REVEAL_SCALE
       } else {
         const e = ease((tt - 0.58) / 0.42)
-        pos = lerp3(via, to, e)
-        rot = lerp3(viaRot, toRot, e)
+        pos = lerp3(POS, via, to, e)
+        rot = lerp3(ROT, viaRot, toRot, e)
         scale = lerp(REVEAL_SCALE, BASE_SCALE, e)
       }
     } else {
       const e = ease(tt)
-      pos = lerp3(from, to, e)
+      pos = lerp3(POS, from, to, e)
       pos[1] += Math.sin(Math.PI * tt) * arc
-      rot = lerp3(fromRot, toRot, e)
+      rot = lerp3(ROT, fromRot, toRot, e)
       scale = BASE_SCALE
     }
 
@@ -87,7 +96,7 @@ export default function FlyingTile3D({
 
   return (
     <group ref={ref} position={from} rotation={fromRot} scale={BASE_SCALE}>
-      <Tile3D card={card} faceDown={faceDown} liftOnHover={false} />
+      <Tile3D card={card} faceDown={faceDown} back={back} liftOnHover={false} />
     </group>
   )
 }

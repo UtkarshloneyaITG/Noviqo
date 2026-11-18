@@ -13,6 +13,8 @@ class Player:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     hand: List[Card] = field(default_factory=list)
     is_connected: bool = True
+    character: str = "char:m-Casual"     # equipped items, shown at the table
+    card_back: str = "back:classic"
 
     def to_dict(self) -> dict:
         """Public summary (no hand contents — use game_state view for that)."""

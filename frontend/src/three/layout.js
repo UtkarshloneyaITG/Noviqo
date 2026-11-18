@@ -6,9 +6,16 @@
  * distributed around the remaining arc — walking clockwise from the player,
  * matching the original 2D seating logic.
  */
-export const TABLE_RADIUS = 6
+export const TABLE_RADIUS = 4.6
 export const TABLE_TOP_Y = 0.42
-export const SEAT_RADIUS = 7.4 // distance of seats from table centre
+export const SEAT_RADIUS = 6.0 // distance of seats from table centre
+
+// The cards are oversized (1 x 1.5), so the seated characters are scaled to
+// match them: FIGURE_H is a character's standing height in world units, and
+// the floor sits a proportional table-height below the felt.
+export const FIGURE_H = 7.4
+export const FIGURE_SCALE = FIGURE_H / 1.8 // world units per human metre
+export const FLOOR_Y = TABLE_TOP_Y + 0.21 - 0.78 * FIGURE_SCALE
 
 // Distinct, well-separated hues so no two players share a colour (max 7 seats).
 export const PLAYER_HUES = [0, 210, 120, 45, 280, 28, 170, 320, 95, 250]
@@ -30,9 +37,10 @@ export function opponentSeats(count) {
   if (count <= 0) return []
   // The player sits at angle = +90° (i.e. +Z, toward camera). Opponents fill
   // the arc from one side, across the far edge, to the other side — never the
-  // player's own seat. Spread them across ~280° centred on the far side (-Z).
+  // player's own seat. Spread them across up to 180° centred on the far side (-Z), so the
+  // outermost seats stay level with the table centre, clear of the camera.
   const seats = []
-  const spreadDeg = count === 1 ? 0 : Math.min(260, 50 * count)
+  const spreadDeg = count === 1 ? 0 : Math.min(180, 40 * count)
   const startDeg = -90 - spreadDeg / 2 // far side is -90° in this convention
   const stepDeg = count > 1 ? spreadDeg / (count - 1) : 0
 

@@ -9,7 +9,12 @@
 import { useEffect, useRef } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useAppStore } from '../store/appStore'
 
+const LOOK_SEND_MS = 100     // others see your head turn; at most 10 updates/s
+const LOOK_EPSILON = 0.02    // radians of change worth sending
+
+const FOV = 46               // the table lens (same as the Canvas camera in Experience)
 const SENS = 0.0026          // radians per pixel dragged
 const YAW_LIMIT = 0.62       // ~35° left/right
 const PITCH_UP = 0.26        // how far you can tilt up
@@ -36,6 +41,8 @@ export default function LookControls({
 
   // Pin the camera and capture its base forward direction once.
   useEffect(() => {
+    camera.fov = FOV // the lobby leaves its own lens on the shared camera
+    camera.updateProjectionMatrix()
     eye.current.set(...position)
     camera.position.copy(eye.current)
     baseDir.current
@@ -92,6 +99,19 @@ export default function LookControls({
 
   const tmp = useRef(new THREE.Vector3()).current
   const euler = useRef(new THREE.Euler(0, 0, 0, 'YXZ')).current
+
+  // Tell the table where we're looking, so our character turns its head for them.
+  const sent = useRef({ yaw: 0, pitch: 0, at: 0 })
+  useFrame(() => {
+    const s = sent.current
+    const now = performance.now()
+    if (now - s.at < LOOK_SEND_MS) return
+    const y = targetYaw.current
+    const p = targetPitch.current
+    if (Math.abs(y - s.yaw) < LOOK_EPSILON && Math.abs(p - s.pitch) < LOOK_EPSILON) return
+    Object.assign(s, { yaw: y, pitch: p, at: now })
+    useAppStore.getState().sendLook(Math.round(y * 100) / 100, Math.round(p * 100) / 100)
+  })
 
   useFrame(() => {
     // ease toward target angles

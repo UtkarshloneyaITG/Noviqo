@@ -1,123 +1,123 @@
 /**
- * Zustand store — single source of truth for the UNO client.
+ * Zustand store — single source of truth for the client.
  *
- * Game state lives on the server (in-memory). The only thing persisted
- * client-side is the session identity {playerId, roomId, playerName} in
- * sessionStorage (per-tab), so a page refresh rejoins the same game
- * instead of dropping the player back to the lobby.
+ * The server owns everything (accounts, party, friends, games). The only
+ * thing kept client-side is the session token in localStorage['nq.session'];
+ * the socket hook sends it as `auth` on every (re)connect and the server
+ * re-binds the account (and its live game, if any).
+ *
+ * Outbound lobby messages go through `send(type, payload)`, which maps 1:1
+ * onto the protocol table in the platform spec. Game actions keep their
+ * named methods (the table HUD calls them).
  */
 
 import { create } from 'zustand'
 
-// ── Session persistence (sessionStorage: per-tab, so two tabs never fight
-//    over the same player_id's socket binding on the server) ───────────────
-const SESSION_KEY = 'uno_session'
+const TOKEN_KEY = 'nq.session'
 
-export function loadSession() {
+export function readToken() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY)
-    return raw ? JSON.parse(raw) : null
+    return localStorage.getItem(TOKEN_KEY)
   } catch {
     return null
   }
 }
 
-function saveSession(session) {
+function writeToken(token) {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, savedAt: Date.now() }))
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
   } catch {
-    // storage unavailable — resume simply won't survive a refresh
+    // storage unavailable — the session just won't survive a refresh
   }
 }
 
-function clearSession() {
-  try {
-    sessionStorage.removeItem(SESSION_KEY)
-  } catch {
-    // ignore
-  }
-}
+const CHAT_KEEP = 100
+const keep = (list, msg) => [...list, msg].slice(-CHAT_KEEP)
 
-const RESUME_TIMEOUT_MS = 6000
-let resumeTimer = null
 let actionPendingTimer = null
 let errorTimer = null
 let notificationTimer = null
+
+// Everything tied to an account; reset on sign out / rejected token.
+const ACCOUNT_STATE = {
+  profile: null,
+  catalog: { items: [], milestones: [], emotes: [] },
+  friends: [],
+  incoming: [],
+  outgoing: [],
+  party: null,
+  invites: [],      // party_invite messages awaiting an answer
+  requests: [],     // party_request messages awaiting an answer (leader)
+  gchat: [],
+  pchat: [],
+  emotes: {},       // lobby emote last played by each party member: id -> { id: emote, at: performance.now() }
+  newItems: [],     // item ids unlocked by recent games, until Inventory is opened
+  panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|invite|games
+  playerId: null,
+  roomId: null,
+  gameState: null,
+  bubbles: {},
+}
+
+/** Where each other player at the table is looking: id -> { yaw, pitch }.
+ *  Plain object, not store state: it changes ~10×/s per player and only the
+ *  seated characters read it, every frame, so it must never re-render React. */
+export const looks = {}
 
 export const useAppStore = create((set, get) => ({
   // ── Connection ────────────────────────────────────────────────────────────
   isConnected: false,
   sendMessage: null,          // injected by the useWebSocket hook
-  // 'connecting' | 'online' | 'reconnecting' | 'resuming'
+  // 'connecting' | 'online' | 'reconnecting'
   connectionPhase: 'connecting',
-  resumePending: false,       // true while a session-resume join is in flight
   actionPending: false,       // true while a gameplay action awaits the server
-  joinPending: false,         // true while create/join room awaits the server
 
-  // ── Identity ─────────────────────────────────────────────────────────────
-  playerId: null,
-  playerName: null,
+  // ── Account ──────────────────────────────────────────────────────────────
+  // 'connecting' (no answer yet) | 'checking' (token sent) | 'signed_out' | 'signed_in'
+  auth: 'connecting',
+  authPending: false,         // sign in / create account awaiting the server
+  authError: null,
+  signup: null,               // { character, name } while the create-account form is open (shown on the pedestal)
+  ...ACCOUNT_STATE,
 
-  // ── Room (lobby) ─────────────────────────────────────────────────────────
-  roomId: null,
-  roomState: null,            // { room_id, status, players, host_player_id, can_start }
-
-  // ── Game ─────────────────────────────────────────────────────────────────
-  gameState: null,            // full personalised state from server
-
-  // ── UI ───────────────────────────────────────────────────────────────────
+  // ── Game UI ──────────────────────────────────────────────────────────────
   showColorPicker: false,
   pendingWildCardId: null,    // card ID waiting for colour selection
   error: null,
   notification: null,         // brief toast message
-  bubbles: {},                // player_id -> { text, key } chat/emoji bubbles
   _bubbleSeq: 0,
 
   // =========================================================================
-  // Setters injected / called by the WS hook
+  // Setters called by the WS hook / UI
   // =========================================================================
 
   setConnected: (v) =>
     set((s) => ({
       isConnected: v,
-      connectionPhase: v
-        ? s.resumePending
-          ? 'resuming'
-          : 'online'
-        : s.playerId || loadSession()
-          ? 'reconnecting'
-          : 'connecting',
+      connectionPhase: v ? 'online' : s.profile ? 'reconnecting' : 'connecting',
     })),
 
   setSendMessage: (fn) => set({ sendMessage: fn }),
 
-  // Called by useWebSocket right before it sends the resume join_room.
-  beginResume: (session) => {
-    clearTimeout(resumeTimer)
-    set((s) => ({
-      resumePending: true,
-      connectionPhase: 'resuming',
-      playerName: s.playerName || session.playerName || null,
-    }))
-    resumeTimer = setTimeout(() => {
-      if (get().resumePending) get()._failResume()
-    }, RESUME_TIMEOUT_MS)
+  // Socket just opened: present the stored token, or go to sign-in.
+  authenticate: () => {
+    const token = readToken()
+    if (!token) {
+      set({ auth: 'signed_out' })
+      return
+    }
+    // Keep the lobby up during a reconnect instead of flashing "signing in".
+    set((s) => ({ auth: s.profile ? 'signed_in' : 'checking' }))
+    get().sendMessage?.({ type: 'auth', token })
   },
 
-  _failResume: () => {
-    clearTimeout(resumeTimer)
-    clearSession()
-    set({
-      resumePending: false,
-      connectionPhase: 'online',
-      roomId: null,
-      roomState: null,
-      gameState: null,
-      playerId: null,
-      bubbles: {},
-    })
-    get().setError('Your previous game is no longer available.')
-  },
+  send: (type, payload = {}) => get().sendMessage?.({ type, ...payload }),
+  sendLook: (yaw, pitch) => get().sendMessage?.({ type: 'look', yaw, pitch }),
+
+  openPanel: (panel) => set({ panel }),
+  closePanel: () => set({ panel: null }),
+  setSignup: (signup) => set({ signup }),
 
   _clearActionPending: () => {
     clearTimeout(actionPendingTimer)
@@ -153,69 +153,131 @@ export const useAppStore = create((set, get) => ({
     const { type } = message
 
     switch (type) {
-      // ── Joined room (create, join, or session resume) ────────────────────
+      // ── Account ──────────────────────────────────────────────────────────
+      case 'auth_ok': {
+        writeToken(message.token)
+        set({
+          auth: 'signed_in',
+          authPending: false,
+          authError: null,
+          signup: null,
+          profile: message.profile,
+          playerId: message.profile?.id ?? null,
+        })
+        break
+      }
+
+      case 'auth_error': {
+        writeToken(null)
+        set({ ...ACCOUNT_STATE, auth: 'signed_out', authPending: false, authError: message.message || null })
+        break
+      }
+
+      case 'signed_out': {
+        writeToken(null)
+        set({ ...ACCOUNT_STATE, auth: 'signed_out', authPending: false, authError: null })
+        break
+      }
+
+      case 'catalog': {
+        set({ catalog: { items: message.items || [], milestones: message.milestones || [], emotes: message.emotes || [] } })
+        break
+      }
+
+      case 'profile': {
+        set({ profile: message.profile, playerId: message.profile?.id ?? get().playerId })
+        break
+      }
+
+      case 'friends': {
+        set({
+          friends: message.friends || [],
+          incoming: message.incoming || [],
+          outgoing: message.outgoing || [],
+        })
+        break
+      }
+
+      // ── Party ────────────────────────────────────────────────────────────
+      case 'party': {
+        const party = message.party
+        const memberIds = new Set((party?.members || []).map((m) => m.id))
+        set((s) => ({
+          party,
+          // A new party means a new party chat; answered requests drop off.
+          pchat: s.party?.id === party?.id ? s.pchat : [],
+          requests: s.requests.filter((r) => !memberIds.has(r.from.id)),
+          invites: s.invites.filter((i) => i.party_id !== party?.id),
+        }))
+        break
+      }
+
+      case 'party_invite': {
+        set((s) => ({
+          invites: [...s.invites.filter((i) => i.party_id !== message.party_id), message],
+        }))
+        break
+      }
+
+      case 'party_request': {
+        set((s) => ({
+          requests: [...s.requests.filter((r) => r.from.id !== message.from.id), message],
+        }))
+        break
+      }
+
+      // ── Chat ─────────────────────────────────────────────────────────────
+      case 'gchat_history': {
+        set({ gchat: (message.messages || []).slice(-CHAT_KEEP) })
+        break
+      }
+
+      case 'gchat':
+      case 'pchat': {
+        if (message.message) set((s) => ({ [type]: keep(s[type], message.message) }))
+        break
+      }
+
+      case 'emote': {
+        set((s) => ({ emotes: { ...s.emotes, [message.id]: { id: message.emote, at: performance.now() } } }))
+        break
+      }
+
+      case 'notice': {
+        get().setNotification(message.message)
+        break
+      }
+
+      case 'game_rewards': {
+        const unlocked = message.rewards?.unlocked || []
+        if (unlocked.length) set((s) => ({ newItems: [...new Set([...s.newItems, ...unlocked])] }))
+        break
+      }
+
+      // ── Game ─────────────────────────────────────────────────────────────
       case 'joined': {
-        const { player_id, room_id, room_state } = message
-        clearTimeout(resumeTimer)
-        set({
-          playerId: player_id,
-          roomId: room_id,
-          roomState: room_state,
-          gameState: null,
-          error: null,
-          resumePending: false,
-          joinPending: false,
-          connectionPhase: 'online',
-        })
-        saveSession({
-          playerId: player_id,
-          roomId: room_id,
-          playerName: get().playerName,
-        })
+        set({ playerId: message.player_id, roomId: message.room_id, gameState: null, error: null })
         break
       }
 
-      // ── Lobby update ─────────────────────────────────────────────────────
-      case 'room_update': {
-        set({ roomState: message.room_state })
-        break
-      }
-
-      // ── Rematch — everyone returns to the waiting room ───────────────────
+      // ── Rematch — everyone returns to the lobby ──────────────────────────
       case 'rematch_started': {
-        set({ gameState: null, roomState: message.room_state })
-        get().setNotification('🔄 Rematch! Back to the waiting room.')
+        set({ gameState: null })
         break
       }
 
-      // ── This client was kicked by the host ───────────────────────────────
+      // ── This client was kicked from the game ─────────────────────────────
       case 'kicked': {
-        clearSession()
-        set({
-          roomId: null,
-          roomState: null,
-          gameState: null,
-          playerId: null,
-          bubbles: {},
-        })
-        get().setError(message.message || 'You were removed from the room.')
+        set({ roomId: null, gameState: null, bubbles: {} })
+        get().setError(message.message || 'You were removed from the game.')
         break
       }
 
-      // ── Another player joined the lobby ──────────────────────────────────
-      case 'player_joined': {
-        if (message.room_state) set({ roomState: message.room_state })
-        get().setNotification(`${message.player_name} joined the room.`)
-        break
-      }
-
-      // ── Player left ──────────────────────────────────────────────────────
       case 'player_left': {
-        get().setNotification(`${message.player_name} left the room.`)
+        get().setNotification(`${message.player_name} left the game.`)
         break
       }
 
-      // ── Player reconnected ───────────────────────────────────────────────
       case 'player_reconnected': {
         get().setNotification(`${message.player_name} reconnected.`)
         break
@@ -244,6 +306,11 @@ export const useAppStore = create((set, get) => ({
       }
 
       // ── Chat / emoji bubble ──────────────────────────────────────────────
+      case 'look': {
+        looks[message.id] = { yaw: message.yaw, pitch: message.pitch }
+        break
+      }
+
       case 'chat': {
         const { player_id, text } = message
         if (!player_id || !text) break
@@ -266,14 +333,12 @@ export const useAppStore = create((set, get) => ({
 
       // ── Error from server ────────────────────────────────────────────────
       case 'error': {
-        // While a resume join is in flight, the server answers this socket
-        // sequentially — any error necessarily answers our join_room.
-        if (get().resumePending) {
-          get()._failResume()
+        get()._clearActionPending()
+        // A failed sign in / sign up shows on the form, not as a toast.
+        if (get().authPending) {
+          set({ authPending: false, authError: message.message })
           break
         }
-        get()._clearActionPending()
-        set({ joinPending: false })
         get().setError(message.message)
         break
       }
@@ -284,43 +349,47 @@ export const useAppStore = create((set, get) => ({
   },
 
   // =========================================================================
+  // Account / lobby actions
+  // =========================================================================
+
+  signIn: (username, password) => {
+    set({ authPending: true, authError: null })
+    get().send('signin', { username, password })
+  },
+
+  signUp: (fields) => {
+    set({ authPending: true, authError: null })
+    get().send('signup', fields)
+  },
+
+  signOut: () => {
+    get().send('signout')
+    writeToken(null)
+    set({ ...ACCOUNT_STATE, auth: 'signed_out' })
+  },
+
+  acceptInvite: (partyId) => {
+    get().send('party_accept', { party_id: partyId })
+    get().dismissInvite(partyId)
+  },
+
+  // No decline message exists for invites — "Not now" just hides it.
+  dismissInvite: (partyId) =>
+    set((s) => ({ invites: s.invites.filter((i) => i.party_id !== partyId) })),
+
+  answerRequest: (id, admit) => {
+    get().send(admit ? 'party_admit' : 'party_deny', { id })
+    set((s) => ({ requests: s.requests.filter((r) => r.from.id !== id) }))
+  },
+
+  clearNewItems: () => set({ newItems: [] }),
+
+  // =========================================================================
   // Game actions (call these to send WS messages)
   // =========================================================================
 
-  createRoom: (playerName) => {
-    const name = playerName.trim()
-    if (!name || get().joinPending) return
-    set({ playerName: name, joinPending: true })
-    get().sendMessage?.({ type: 'create_room', player_name: name })
-  },
-
-  joinRoom: (roomId, playerName) => {
-    const name = playerName.trim()
-    const rid = roomId.trim().toUpperCase()
-    if (!name || !rid || get().joinPending) return
-    set({ playerName: name, joinPending: true })
-    get().sendMessage?.({
-      type: 'join_room',
-      room_id: rid,
-      player_name: name,
-      // No player_id sent — server always treats this as a fresh join
-    })
-  },
-
-  startGame: () => {
-    get().sendMessage?.({ type: 'start_game' })
-  },
-
   rematch: () => {
     get().sendMessage?.({ type: 'rematch' })
-  },
-
-  updateSettings: (partial) => {
-    get().sendMessage?.({ type: 'update_settings', settings: partial })
-  },
-
-  kickPlayer: (targetId) => {
-    get().sendMessage?.({ type: 'kick_player', target_id: targetId })
   },
 
   // `card` is the full card object from gameState.my_hand
@@ -381,8 +450,7 @@ export const useAppStore = create((set, get) => ({
 
   leaveRoom: () => {
     get().sendMessage?.({ type: 'leave_room' })
-    clearSession()
-    set({ roomId: null, roomState: null, gameState: null, playerId: null, bubbles: {} })
+    set({ roomId: null, gameState: null, bubbles: {} })
   },
 
   // Send a chat line or emoji; it echoes back to everyone (incl. sender) as a

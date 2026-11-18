@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from fastapi.testclient import TestClient
 
 import main
+from core.accounts import Accounts
 from core.channel_manager import RoomManager
 from core.member import Player
 from core.session import GameState, GameStatus
@@ -122,20 +123,52 @@ def test_load_all_rebuilds_games():
     assert [c.id for c in restored.players[0].hand] == [c.id for c in game.players[0].hand]
 
 
-def test_server_restores_saved_games_on_startup(monkeypatch):
-    _, game = live_game()
-    a = game.players[0]
-    channels = FakeCollection({game.room_id: {"_id": game.room_id, **game.to_doc()}})
-    monkeypatch.setattr(main, "_make_storage", lambda: Storage(channels, FakeCollection()))
+def test_accounts_sessions_and_chat_flush_and_reload():
+    acc = Accounts()
+    a, token = acc.signup("@flusher", "password1", None, "char:m-Casual")
+    cols = {k: FakeCollection() for k in ("accounts", "sessions", "chat")}
+    st = Storage(FakeCollection(), FakeCollection(), **cols)
+    st.mark_chat([{"id": "m1", "text": "hi"}])
+    run(st.flush(RoomManager(), acc))
+    assert a["id"] in cols["accounts"].docs and len(cols["sessions"].docs) == 1
+    assert "expire_at" in next(iter(cols["sessions"].docs.values()))      # TTL index field
+    docs, sessions, chat = run(st.load_accounts())
+    fresh = Accounts()
+    fresh.load(docs, sessions)
+    assert fresh.auth(token)["id"] == a["id"] and chat == [{"id": "m1", "text": "hi"}]
+    acc.signout(token)
+    run(st.flush(RoomManager(), acc))
+    assert cols["sessions"].docs == {}
+
+
+def test_server_restores_accounts_and_games_on_startup(monkeypatch):
+    acc = Accounts()
+    a, token = acc.signup("@restore_a", "password1", None, "char:m-Casual")
+    b, _ = acc.signup("@restore_b", "password1", None, "char:w-Casual")
+    rm = RoomManager()
+    rid = rm.create_room()
+    for x in (a, b):
+        rm.add_player_to_room(rid, Player(name=x["display_name"], id=x["id"]))
+    game = rm.get_room(rid)
+    game.start_game()
+    me = game._find_player(a["id"])
+    cols = {
+        "accounts": FakeCollection({i: acc.account_doc(i) for i in acc.dirty_accounts}),
+        "sessions": FakeCollection({k: acc.session_doc(k) for k in acc.dirty_sessions}),
+        "chat": FakeCollection(),
+    }
+    channels = FakeCollection({rid: {"_id": rid, **game.to_doc()}})
+    monkeypatch.setattr(main, "_make_storage", lambda: Storage(channels, FakeCollection(), **cols))
+    monkeypatch.setattr(main, "accounts", Accounts())          # empty, as after a restart
+    monkeypatch.setattr(main, "room_manager", RoomManager())
 
     with TestClient(main.app) as client:
         with client.websocket_connect("/ws") as ws:
-            ws.send_json({"type": "join_room", "room_id": game.room_id,
-                          "player_name": "A", "player_id": a.id})
+            ws.send_json({"type": "auth", "token": token})
             states = []
             ws.send_json({"type": "ping"})  # its error reply marks the end
             while (msg := ws.receive_json())["type"] != "error":
                 if msg["type"] == "game_state":
                     states.append(msg["state"])
-            assert states, "reconnecting player got no game_state"
-            assert states[-1]["my_hand"] == [c.to_dict() for c in a.hand]
+            assert states, "signing back in after a restart gave no game_state"
+            assert states[-1]["my_hand"] == [c.to_dict() for c in me.hand]

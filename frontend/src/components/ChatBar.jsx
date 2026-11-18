@@ -1,21 +1,25 @@
 /**
- * ChatBar — screen-space chat + quick-emoji bar (bottom-right). Messages are
- * broadcast via the store and appear as bubbles above each player's head;
- * your own message echoes here as confirmation.
+ * ChatBar — bottom-right in-game chat + quick emotes. Messages are broadcast
+ * via the store and appear as bubbles above each player's head; your own
+ * message echoes here as confirmation.
  */
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useAppStore } from '../store/appStore'
+import { emotesFor } from '../items'
+import '../styles/table.css'
 
-const EMOJIS = ['👍', '😂', '😮', '😡', '🎉', '❤️', '🤔', '😎', '🔥', '👋', '😭', '🤝']
+const NO_ITEMS = []
 
 export default function ChatBar() {
-  const { gameState, playerId, sendChat, bubbles } = useAppStore()
+  const playing = useAppStore((s) => s.gameState?.status === 'playing')
+  const myBubble = useAppStore((s) => s.bubbles?.[s.playerId])
+  const sendChat = useAppStore((s) => s.sendChat)
+  const inventory = useAppStore((s) => s.profile?.inventory) || NO_ITEMS
+  const emojis = useMemo(() => emotesFor(inventory), [inventory])
   const [text, setText] = useState('')
   const [showEmojis, setShowEmojis] = useState(false)
 
-  if (!gameState || gameState.status !== 'playing') return null
-
-  const myBubble = bubbles?.[playerId]
+  if (!playing) return null
 
   const submit = (e) => {
     e?.preventDefault()
@@ -26,41 +30,41 @@ export default function ChatBar() {
   }
 
   return (
-    <div className="chatbar">
-      {myBubble && <div className="chatbar-echo">{myBubble.text}</div>}
+    <div className="tb tb-chat">
+      {myBubble && <div className="tb-panel tb-chat-echo">{myBubble.text}</div>}
 
       {showEmojis && (
-        <div className="chatbar-emojis">
-          {EMOJIS.map((e) => (
-            <button
-              key={e}
-              className="chatbar-emoji"
-              onClick={() => sendChat(e)}
-              type="button"
-            >
+        <div className="tb-panel tb-emojis">
+          {emojis.map((e) => (
+            <button key={e} className="tb-emoji" onClick={() => sendChat(e)} type="button" aria-label={`Send ${e}`}>
               {e}
             </button>
           ))}
         </div>
       )}
 
-      <form className="chatbar-form" onSubmit={submit}>
+      <form className="tb-panel tb-chat-form" onSubmit={submit}>
         <button
           type="button"
-          className="chatbar-toggle"
+          className="tb-chat-toggle"
           onClick={() => setShowEmojis((v) => !v)}
-          title="Quick emoji"
+          aria-expanded={showEmojis}
+          aria-label="Quick emotes"
         >
-          😊
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" />
+          </svg>
         </button>
         <input
-          className="chatbar-input"
+          className="tb-chat-input"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Say something…"
+          placeholder="Say something"
+          aria-label="Chat message"
           maxLength={120}
         />
-        <button className="chatbar-send" type="submit">
+        <button className="tb-btn tb-btn--ghost" type="submit">
           Send
         </button>
       </form>

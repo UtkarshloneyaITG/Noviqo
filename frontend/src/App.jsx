@@ -1,10 +1,10 @@
 /**
  * App — root component.
  *
- * The entire game now lives inside a 3D world (React Three Fiber): the lobby
- * and the play table are rendered in <Experience/>. Screen-space HUD and
- * modals (turn flash, hints, colour picker, game over, toasts) are layered
- * on top of the WebGL canvas — the standard structure for a 3D web game.
+ * Everything lives inside one 3D world (React Three Fiber, <Experience/>):
+ * the lobby rooftop when not in a game, the table during one. Screen-space
+ * HUD is layered on top: the lobby HUD (sign-in, party, friends, chat…) or
+ * the in-game HUD (turn flash, hints, colour picker, game over, toasts).
  *
  * The PythonDocs camouflage gate is intentionally left as a plain webpage.
  */
@@ -13,9 +13,11 @@ import React, { useState, useEffect } from 'react'
 import { useAppStore } from './store/appStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import Experience from './three/Experience'
+import Lobby from './lobby/Lobby'
 import Toolbar from './components/Toolbar'
 import ChatBar from './components/ChatBar'
 import TimerBar from './components/TimerBar'
+import Countdown from './components/Countdown'
 import HintBar from './components/HintBar'
 import Announcer from './components/Announcer'
 import ColorPicker from './components/ColorPicker'
@@ -32,18 +34,16 @@ export default function App() {
 
   useWebSocket()
 
-  const {
-    gameState,
-    playerId,
-    isConnected,
-    connectionPhase,
-    roomId,
-    showColorPicker,
-    error,
-    notification,
-  } = useAppStore()
+  // Narrow selectors: chat lines, bubbles and timer ticks must not re-render
+  // the root (and with it the whole HUD).
+  const status = useAppStore((s) => s.gameState?.status)
+  const isConnected = useAppStore((s) => s.isConnected)
+  const showColorPicker = useAppStore((s) => s.showColorPicker)
+  const error = useAppStore((s) => s.error)
+  const notification = useAppStore((s) => s.notification)
 
-  const isFinished = gameState?.status === 'finished'
+  const isFinished = status === 'finished'
+  const inGame = status === 'playing' || isFinished
 
   useEffect(() => {
     if (!isFinished) {
@@ -56,14 +56,6 @@ export default function App() {
 
   if (!unlocked) return <PythonDocs onUnlock={() => setUnlocked(true)} />
 
-  const bannerText =
-    connectionPhase === 'resuming'
-      ? 'Rejoining your game…'
-      : roomId
-      ? 'Reconnecting to the chamber…'
-      : 'Connecting to the chamber…'
-  const showBanner = !isConnected || connectionPhase === 'resuming'
-
   return (
     <div className="app app--3d">
       {/* ── 3D world (lobby + table) ───────────────────────────────── */}
@@ -72,31 +64,40 @@ export default function App() {
       </div>
 
       {/* ── Screen-space HUD / overlays ────────────────────────────── */}
-      {showBanner && (
-        <div className="banner banner--offline">
-          <span className="spinner spinner--banner" aria-hidden="true" />
-          {bannerText}
-        </div>
-      )}
+      {!inGame ? (
+        <Lobby />
+      ) : (
+        <>
+          {!isConnected && (
+            <div className="banner banner--offline">
+              <span className="spinner spinner--banner" aria-hidden="true" />
+              Reconnecting to your game…
+            </div>
+          )}
 
-      {error && <div className="toast toast--error">{error}</div>}
-      {notification && <div className="toast toast--info">{notification}</div>}
+          {error && <div className="toast toast--error">{error}</div>}
+          {notification && <div className="toast toast--info">{notification}</div>}
 
-      <Toolbar />
-      <TimerBar />
-      <HintBar />
-      <ChatBar />
-      <Announcer />
+          <Toolbar />
+          <TimerBar />
+          <HintBar />
+          <ChatBar />
+          <Announcer />
+          <Countdown />
 
-      {showColorPicker && <ColorPicker />}
+          {showColorPicker && <ColorPicker />}
 
-      {isFinished && showSummary && gameState && (
-        <Summary
-          winner={gameState.winner}
-          winnerId={gameState.winner_id}
-          myId={playerId}
-        />
+          {isFinished && showSummary && <GameSummary />}
+        </>
       )}
     </div>
   )
+}
+
+// Reads the finished game's winner only once the summary is due.
+function GameSummary() {
+  const winner = useAppStore((s) => s.gameState?.winner)
+  const winnerId = useAppStore((s) => s.gameState?.winner_id)
+  const myId = useAppStore((s) => s.playerId)
+  return <Summary winner={winner} winnerId={winnerId} myId={myId} />
 }

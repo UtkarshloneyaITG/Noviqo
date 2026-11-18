@@ -1,23 +1,29 @@
 /**
  * SourceStack3D — a stack of face-down cards lying flat on the table.
  * Clickable on your turn to draw. When it's your turn (and especially when
- * you must draw), a glowing pulsing ring under the deck highlights it.
+ * you must draw), a glowing pulsing ring under the deck highlights it, plus a
+ * red up-light beam when drawing is mandatory.
  */
 import { useMemo, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
+import * as THREE from 'three'
 import { useAppStore } from '../store/appStore'
 import Tile3D from './Tile3D'
 import { CARD_T } from './tileTextures'
+import { beamMaterial, PALETTE } from './world/sky'
 import { TABLE_TOP_Y as TOP_Y } from './layout'
 
-export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, mustDraw = false }) {
+const URGENT_BEAM = beamMaterial(PALETTE.red)
+const RED_HDR = new THREE.Color(PALETTE.red).multiplyScalar(1.8) // HDR, so it blooms
+const AMBER_HDR = new THREE.Color(PALETTE.amber).multiplyScalar(1.8)
+
+export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, mustDraw = false, back }) {
   const drawCard = useAppStore((s) => s.drawCard)
   const actionPending = useAppStore((s) => s.actionPending)
   const connectionPhase = useAppStore((s) => s.connectionPhase)
   const canDraw = isMyTurn && !actionPending && connectionPhase === 'online'
   const ringRef = useRef()
-  const coneRef = useRef()
 
   const stack = useMemo(() => {
     // Always keep at least one clickable face-down card on your turn, even
@@ -29,20 +35,14 @@ export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, must
   }, [count, isMyTurn])
 
   const baseY = TOP_Y + 0.22
-  const label = drawStack > 0 ? `Draw ${drawStack}!` : count > 0 ? `${count} left` : 'Reshuffle'
+  const label = drawStack > 0 ? `Draw ${drawStack}` : count > 0 ? `${count} left` : 'Reshuffle'
   const urgent = mustDraw || drawStack > 0
-  const ringColor = urgent ? '#ff6060' : '#ffd84d'
 
-  // Pulse the ring, and bob/spin the "draw here" cone.
+  // Pulse the ring.
   useFrame((state) => {
-    const t = state.clock.elapsedTime
     if (ringRef.current) {
       const amp = urgent ? 0.14 : 0.06
-      ringRef.current.scale.setScalar(1 + Math.sin(t * 4) * amp)
-    }
-    if (coneRef.current) {
-      coneRef.current.position.y = baseY + 1.35 + Math.sin(t * 3) * 0.12
-      coneRef.current.rotation.y += 0.03
+      ringRef.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 4) * amp)
     }
   })
 
@@ -52,24 +52,22 @@ export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, must
       {isMyTurn && (
         <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, baseY - 0.19, 0]}>
           <ringGeometry args={[0.95, 1.25, 44]} />
-          <meshBasicMaterial color={ringColor} transparent opacity={0.9} />
+          <meshBasicMaterial color={urgent ? RED_HDR : AMBER_HDR} transparent opacity={0.9} />
         </mesh>
       )}
 
-      {/* Cone pointing down at the deck when you need to draw */}
+      {/* Up-light beam over the deck when you must draw */}
       {urgent && (
-        <group ref={coneRef} position={[0, baseY + 1.35, 0]}>
-          <mesh rotation={[Math.PI, 0, 0]}>
-            <coneGeometry args={[0.3, 0.62, 5]} />
-            <meshStandardMaterial color="#ff5a5a" emissive="#ff3030" emissiveIntensity={0.9} roughness={0.35} />
-          </mesh>
-        </group>
+        <mesh position={[0, baseY + 1.6, 0]} material={URGENT_BEAM}>
+          <cylinderGeometry args={[1.1, 0.9, 3.2, 40, 1, true]} />
+        </mesh>
       )}
 
       {stack.map((i) => (
         <Tile3D
           key={i}
           faceDown
+          back={back}
           liftOnHover={false}
           playable={canDraw && i === stack.length - 1}
           onClick={canDraw ? () => drawCard() : undefined}
@@ -84,7 +82,7 @@ export default function SourceStack3D({ count = 0, isMyTurn, drawStack = 0, must
         distanceFactor={9}
         pointerEvents="none"
       >
-        <div className={`pile3d-label ${drawStack > 0 ? 'pile3d-label--penalty' : ''}`}>
+        <div className={`tb t3-pile${drawStack > 0 ? ' t3-pile--penalty' : ''}`}>
           {label}
         </div>
       </Html>

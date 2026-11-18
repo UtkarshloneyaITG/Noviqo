@@ -5,9 +5,11 @@
  * and wrapped in a THREE.CanvasTexture. No image assets are required.
  *
  * Textures are cached by a stable key so the 108-card deck only ever
- * produces a handful of unique GPU textures (one per distinct face + 1 back).
+ * produces a handful of unique GPU textures (one per distinct face + one per
+ * card-back style in use).
  */
 import * as THREE from 'three'
+import { CARD_BACKS, DEFAULT_CARD_BACK } from '../items'
 
 export const CARD_W = 1
 export const CARD_H = 1.5
@@ -169,34 +171,37 @@ export function getCardFaceTexture(card) {
   return tex
 }
 
-let _backTex = null
-/** Returns the shared card-back texture. */
-export function getCardBackTexture() {
-  if (_backTex) return _backTex
+const _backs = new Map()
+/** Card-back texture for a CARD_BACKS style id, cached per id (unknown ids use the default). */
+export function getCardBackTexture(styleId) {
+  const id = CARD_BACKS[styleId] ? styleId : DEFAULT_CARD_BACK
+  if (_backs.has(id)) return _backs.get(id)
+  const { base, ellipse, word } = CARD_BACKS[id]
   const canvas = makeCanvas()
   const ctx = canvas.getContext('2d')
 
-  ctx.fillStyle = '#15151b'
+  ctx.fillStyle = base
   roundRect(ctx, 6, 6, TEX_W - 12, TEX_H - 12, 36)
   ctx.fill()
 
+  // Classic keeps the white frame; the other designs frame in their accent.
   ctx.lineWidth = 14
-  ctx.strokeStyle = '#ffffff'
+  ctx.strokeStyle = id === DEFAULT_CARD_BACK ? '#ffffff' : word
   roundRect(ctx, 20, 20, TEX_W - 40, TEX_H - 40, 28)
   ctx.stroke()
 
-  // Red tilted ellipse
+  // Tilted ellipse
   ctx.save()
   ctx.translate(TEX_W / 2, TEX_H / 2)
   ctx.rotate(-Math.PI / 5)
-  ctx.fillStyle = '#d9352c'
+  ctx.fillStyle = ellipse
   ctx.beginPath()
   ctx.ellipse(0, 0, TEX_W * 0.40, TEX_H * 0.24, 0, 0, Math.PI * 2)
   ctx.fill()
   ctx.restore()
 
   // UNO wordmark
-  ctx.fillStyle = '#f5d020'
+  ctx.fillStyle = word
   ctx.strokeStyle = '#000000'
   ctx.lineWidth = 7
   ctx.font = 'bold 92px Arial, sans-serif'
@@ -209,8 +214,9 @@ export function getCardBackTexture() {
   ctx.fillText('UNO', 0, 0)
   ctx.restore()
 
-  _backTex = finishTexture(canvas)
-  return _backTex
+  const tex = finishTexture(canvas)
+  _backs.set(id, tex)
+  return tex
 }
 
 export const ACTIVE_COLOR_HEX = {

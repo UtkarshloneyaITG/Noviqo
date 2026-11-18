@@ -1,72 +1,81 @@
 /**
- * Participant3D — one opponent seated on a chair around the table, holding their
- * cards, with a floating HTML nameplate (avatar, name, card count, turn glow,
- * UNO badge, and a "Catch!" button when they fail to call UNO).
+ * Participant3D — one opponent: their equipped character seated at the
+ * table holding their cards, and one floating HTML label above the head in
+ * the lobby's name-tag style (name, card count, turn / UNO / finished /
+ * offline status, a "Catch" button when they fail to call UNO, and their
+ * chat bubble on top).
  */
-import { useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { Html } from '@react-three/drei'
 import { useAppStore } from '../store/appStore'
 import Avatar3D from './Avatar3D'
-import { TABLE_TOP_Y } from './layout'
+import { FIGURE_H, FLOOR_Y } from './layout'
 
-export default function Participant3D({ player, seat, hue = 200, isCurrentTurn, dealing = false }) {
-  const { playerId, catchUno } = useAppStore()
+const TAG_Y = FLOOR_Y + FIGURE_H * 0.86 // just above a seated head
+
+function Participant3D({ player, seat, hue = 200, isCurrentTurn, dealing = false }) {
+  const playerId = useAppStore((s) => s.playerId)
+  const catchUno = useAppStore((s) => s.catchUno)
+  const playing = useAppStore((s) => s.gameState?.status === 'playing')
   const bubble = useAppStore((s) => s.bubbles?.[player.id])
   const [showCatch, setShowCatch] = useState(false)
-  const timerRef = useRef(null)
 
   const cardCount = player.card_count ?? 0
   const isOffline = !player.is_connected
   const hasUno = player.has_called_uno
-  const canCatch = cardCount === 1 && !hasUno && player.id !== playerId
+  const canCatch = playing && cardCount === 1 && !hasUno && player.id !== playerId
 
+  // Offer the catch a beat after they drop to one card without calling.
   useEffect(() => {
-    if (canCatch) {
-      timerRef.current = setTimeout(() => setShowCatch(true), 1000)
-    } else {
-      clearTimeout(timerRef.current)
-      setShowCatch(false)
-    }
-    return () => clearTimeout(timerRef.current)
+    setShowCatch(false)
+    if (!canCatch) return
+    const id = setTimeout(() => setShowCatch(true), 1000)
+    return () => clearTimeout(id)
   }, [canCatch])
 
-  const playerColor = `hsl(${hue}, 85%, 62%)`
+  const status = hasUno
+    ? ['uno', 'UNO']
+    : isOffline
+    ? ['off', 'Offline']
+    : player.rank
+    ? ['done', 'Finished']
+    : isCurrentTurn
+    ? ['turn', 'Playing now']
+    : null
 
   return (
     <group>
-      {/* Seated 3D character on a chair, holding their cards */}
       <Avatar3D
         seat={seat}
         hue={hue}
         active={isCurrentTurn}
         offline={isOffline}
         count={dealing ? 0 : cardCount}
+        character={player.character}
+        playerId={player.id}
+        back={player.card_back}
       />
 
-      {/* Chat / emoji bubble (floats above the nameplate) */}
-      {bubble && (
-        <Html position={[seat.x, TABLE_TOP_Y + 3.35, seat.z]} center distanceFactor={11}>
-          <div key={bubble.key} className="op3d-bubble">
-            {bubble.text}
-          </div>
-        </Html>
-      )}
-
-      {/* Floating nameplate above the character's head — name + total cards */}
-      <Html position={[seat.x, TABLE_TOP_Y + 2.5, seat.z]} center distanceFactor={11}>
+      <Html position={[seat.x, TAG_Y, seat.z]} center distanceFactor={11}>
         <div
-          className={`op3d ${isOffline ? 'op3d--offline' : ''}`}
-          style={{ '--pc': playerColor }}
+          className={`tb t3-tag${isCurrentTurn ? ' t3-tag--turn' : ''}${isOffline ? ' t3-tag--off' : ''}`}
+          style={{ '--tc': isOffline ? '#4a5170' : `hsl(${hue}, 85%, 62%)` }}
         >
-          <span className="op3d-name">{player.name}</span>
-          <span className="op3d-count">
-            {cardCount} card{cardCount === 1 ? '' : 's'}
-          </span>
-          {hasUno && <span className="op3d-uno">UNO!</span>}
-          {isOffline && <span className="op3d-badge">offline</span>}
+          {bubble && (
+            <div key={bubble.key} className="t3-bubble">
+              {bubble.text}
+            </div>
+          )}
+          <div className="t3-plate">
+            <span className="t3-name">{player.name}</span>
+            <span className="t3-count" title={`${cardCount} card${cardCount === 1 ? '' : 's'}`}>
+              {cardCount}
+            </span>
+          </div>
+          {status && <div className={`t3-st t3-st--${status[0]}`}>{status[1]}</div>}
           {showCatch && (
-            <button className="op3d-catch" onClick={() => catchUno(player.id)}>
-              Catch!
+            <button className="t3-catch" onClick={() => catchUno(player.id)}>
+              Catch
             </button>
           )}
         </div>
@@ -74,3 +83,5 @@ export default function Participant3D({ player, seat, hue = 200, isCurrentTurn, 
     </group>
   )
 }
+
+export default memo(Participant3D)

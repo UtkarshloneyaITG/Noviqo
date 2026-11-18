@@ -1,24 +1,62 @@
 /**
- * Summary — overlay shown when the game finishes.
- * Announces the winner, shows rankings with cumulative scores, and lets
- * the host start a rematch (everyone else waits or leaves).
+ * Summary — the game-over panel: your placement, what you earned (coins;
+ * in ranked also the RP change and your new rank), anything newly unlocked,
+ * the final standings, and Play again (host, or anyone if the host is
+ * offline) / Back to lobby.
  */
-
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import { useAppStore } from '../store/appStore'
+import { CARD_BACKS, FELTS, EMOTES } from '../items'
+import { usePortrait } from '../three/world/characters'
+import '../styles/table.css'
 
-const CONFETTI_COLORS = [
-  '#f0d060','#f04468','#5294ff','#20ee86',
-  '#f5b820','#b060ff','#ff8040','#e8c84a',
-  '#40d0ff','#ff60a0',
-]
+const PLACES = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'] // max 7 players
+const CONFETTI = ['#ffc53d', '#ff3f5f', '#4fd8ff', '#3df2a0', '#ff8a1e', '#c13cff']
 
-const RANK_MEDALS = ['🥇', '🥈', '🥉'] // everyone after 3rd gets 🏅
-const RANK_LABELS = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th'] // max 7 players
+/** 'char:w-SciFi' → 'Sci Fi', 'back:gold' → 'Gold card back', 'felt:violet' → 'Violet felt'. */
+function itemName(id) {
+  const [kind, key = ''] = id.split(':')
+  const word = key.replace(/^[mw]-/, '').replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+  const cap = word.charAt(0).toUpperCase() + word.slice(1)
+  return { char: cap, back: `${cap} card back`, felt: `${cap} felt`, emotes: `${cap} emotes` }[kind] ?? cap
+}
+
+function Portrait({ id }) {
+  const src = usePortrait(id)
+  return <span className="tb-swatch">{src && <img src={src} alt="" />}</span>
+}
+
+function Swatch({ id }) {
+  const kind = id.split(':')[0]
+  if (kind === 'char') return <Portrait id={id} />
+  if (kind === 'back' && CARD_BACKS[id]) {
+    const b = CARD_BACKS[id]
+    return <span className="tb-swatch tb-swatch--back" style={{ '--b': b.base, '--e': b.ellipse, '--w': b.word }} />
+  }
+  if (kind === 'felt' && FELTS[id]) return <span className="tb-swatch tb-swatch--felt" style={{ '--f': FELTS[id] }} />
+  return <span className="tb-swatch">{EMOTES[id]?.[0] ?? '★'}</span>
+}
+
+function Coin() {
+  return (
+    <svg className="tb-coin" viewBox="0 0 22 22" aria-hidden="true">
+      <defs>
+        <linearGradient id="tb-coin-g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ffe28a" />
+          <stop offset="1" stopColor="#d0861c" />
+        </linearGradient>
+      </defs>
+      <circle cx="11" cy="11" r="10" fill="url(#tb-coin-g)" />
+      <circle cx="11" cy="11" r="6.5" fill="none" stroke="#8a5212" strokeWidth="1.5" />
+    </svg>
+  )
+}
 
 export default function Summary({ winner, winnerId, myId }) {
-  const { leaveRoom, rematch, gameState } = useAppStore()
-  const isWinner = winnerId === myId
+  const gameState = useAppStore((s) => s.gameState)
+  const leaveRoom = useAppStore((s) => s.leaveRoom)
+  const rematch = useAppStore((s) => s.rematch)
+
   const placements = gameState?.placements || []
   const isHost = gameState?.host_player_id === myId
   // The server hands the room to whoever asks if the host has gone offline,
@@ -34,80 +72,106 @@ export default function Summary({ winner, winnerId, myId }) {
   const hasScores = Object.values(scoreById).some((s) => s > 0)
 
   // Fallback: if no placements data, build a minimal one from winner
-  const rankings = placements.length > 0
-    ? placements
-    : (winner ? [{ rank: 1, name: winner, id: winnerId }] : [])
+  const rankings = placements.length > 0 ? placements : winner ? [{ rank: 1, name: winner, id: winnerId }] : []
 
-  const myRank = rankings.find(p => p.id === myId)?.rank ?? null
+  const reward = gameState?.rewards?.[myId]
+  const ranked = gameState?.mode === 'ranked'
+  const myRank = reward?.placement ?? rankings.find((p) => p.id === myId)?.rank ?? null
+  const isWinner = myRank === 1 || winnerId === myId
 
   const confetti = useMemo(() => {
     if (!isWinner) return []
-    return Array.from({ length: 60 }, (_, i) => ({
-      id: i,
-      left: `${((i * 97 + i * 13) % 100).toFixed(1)}%`,
+    return Array.from({ length: 50 }, (_, i) => ({
+      left: `${(i * 37) % 100}%`,
       delay: `${((i * 0.07) % 1.6).toFixed(2)}s`,
-      duration: `${(1.2 + (i * 0.11) % 1.5).toFixed(2)}s`,
-      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-      size: `${5 + (i * 4) % 10}px`,
-      isCircle: i % 3 === 0,
-      rotation: `${(i * 47) % 360}deg`,
+      duration: `${(1.6 + ((i * 0.11) % 1.5)).toFixed(2)}s`,
+      color: CONFETTI[i % CONFETTI.length],
+      size: 5 + ((i * 4) % 9),
     }))
   }, [isWinner])
 
-  const heroEmoji = myRank === 1 ? '🏆' : myRank === 2 ? '🥈' : myRank === 3 ? '🥉' : '🎭'
-  const heroTitle = myRank === 1
-    ? 'Victory!'
+  const title = myRank === 1 ? 'Victory' : myRank ? `${PLACES[myRank - 1]} place` : `${winner} wins`
+  const sub = myRank === 1
+    ? 'You emptied your hand first.'
     : myRank === 2
-    ? `${RANK_LABELS[1]} Place!`
-    : myRank
-    ? `${RANK_LABELS[myRank - 1]} Place`
-    : `${winner} Wins!`
+    ? 'So close. A strong showing.'
+    : 'Fortune may favour you next game.'
 
   return (
-    <div className="modal-overlay">
+    <div className="tb tb-modal">
       {isWinner && (
-        <div className="confetti-container" aria-hidden="true">
-          {confetti.map(p => (
-            <div
-              key={p.id}
-              className={`confetti-piece${p.isCircle ? ' confetti-piece--circle' : ''}`}
+        <div className="tb-confetti" aria-hidden="true">
+          {confetti.map((p, i) => (
+            <i
+              key={i}
               style={{
                 left: p.left,
                 width: p.size,
-                height: p.size,
+                height: p.size * 1.6,
                 background: p.color,
                 animationDuration: p.duration,
                 animationDelay: p.delay,
-                transform: `rotate(${p.rotation})`,
               }}
             />
           ))}
         </div>
       )}
-      <div className="game-over-card">
-        <div className="game-over-emoji">{heroEmoji}</div>
-        <h2 className="game-over-title">{heroTitle}</h2>
-        {gameState?.rounds_played > 1 && (
-          <div className="game-over-round">Round {gameState.rounds_played}</div>
-        )}
-        <div className="game-over-divider" />
+      <div className="tb-panel tb-card" role="dialog" aria-modal="true" aria-labelledby="tb-over-title">
+        {myRank && <div className={`tb-place${myRank === 1 ? ' tb-place--win' : ''}`}>{PLACES[myRank - 1]}</div>}
+        <h2 id="tb-over-title" className="tb-title">
+          {title}
+        </h2>
+        {gameState?.rounds_played > 1 && <div className="tb-sub">Round {gameState.rounds_played}</div>}
+        <p className="tb-sub">{sub}</p>
 
-        {/* Rankings table */}
+        {reward && (
+          <div className="tb-rewards">
+            <div className="tb-reward">
+              <Coin />
+              <b>+{reward.coins ?? 0}</b>
+              <small>coins</small>
+            </div>
+            {ranked && (
+              <div className={`tb-reward tb-reward--rp${reward.rp < 0 ? ' tb-reward--loss' : ''}`}>
+                <b>
+                  {reward.rp > 0 ? '+' : ''}
+                  {reward.rp ?? 0}
+                </b>
+                <small>RP</small>
+              </div>
+            )}
+            {ranked && reward.rank_label && (
+              <div className="tb-reward tb-reward--rank">
+                <b>{reward.rank_label}</b>
+              </div>
+            )}
+          </div>
+        )}
+
+        {reward?.unlocked?.length > 0 && (
+          <div className="tb-unlocks">
+            <h3>Unlocked</h3>
+            {reward.unlocked.map((id) => (
+              <div key={id} className="tb-unlock">
+                <Swatch id={id} />
+                <span>{itemName(id)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {rankings.length > 1 && (
-          <div className="game-over-rankings">
+          <div className="tb-ranks">
             {rankings.map((p) => (
-              <div
-                key={p.id}
-                className={`ranking-row${p.id === myId ? ' ranking-row--me' : ''}`}
-              >
-                <span className="ranking-medal">{RANK_MEDALS[p.rank - 1] ?? '🏅'}</span>
-                <span className="ranking-place">{RANK_LABELS[p.rank - 1]}</span>
-                <span className="ranking-name">{p.name}{p.id === myId ? ' (you)' : ''}</span>
+              <div key={p.id} className={`tb-rank${p.id === myId ? ' tb-rank--me' : ''}`}>
+                <span className="tb-rank-pos">{PLACES[p.rank - 1]}</span>
+                <span className="tb-rank-name">
+                  {p.name}
+                  {p.id === myId && <em>you</em>}
+                </span>
                 {hasScores && (
-                  <span className="ranking-points">
-                    {p.rank === 1 && roundPoints > 0 && (
-                      <span className="ranking-points-gain">+{roundPoints}</span>
-                    )}
+                  <span className="tb-rank-pts">
+                    {p.rank === 1 && roundPoints > 0 && <b>+{roundPoints}</b>}
                     {scoreById[p.id] ?? 0} pts
                   </span>
                 )}
@@ -116,24 +180,17 @@ export default function Summary({ winner, winnerId, myId }) {
           </div>
         )}
 
-        <p className="game-over-sub">
-          {isWinner
-            ? 'Magnificent! You claimed the throne.'
-            : myRank === 2
-            ? 'So close! A strong showing.'
-            : 'Fortune may favour you next round.'}
-        </p>
-
-        {canRematch ? (
-          <button className="btn btn--primary btn--large" onClick={rematch}>
-            🔄 Play Again
+        <div className="tb-buttons">
+          {canRematch && (
+            <button className="tb-btn tb-btn--go tb-btn--big" onClick={rematch}>
+              Play again
+            </button>
+          )}
+          <button className="tb-btn tb-btn--ghost" onClick={leaveRoom}>
+            Back to lobby
           </button>
-        ) : (
-          <p className="game-over-wait">Waiting for the host to start a rematch…</p>
-        )}
-        <button className="btn btn--ghost" onClick={leaveRoom}>
-          Back to Lobby
-        </button>
+        </div>
+        {!canRematch && <p className="tb-wait">Waiting for the host to start a rematch</p>}
       </div>
     </div>
   )

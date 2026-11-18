@@ -1,49 +1,47 @@
 /**
- * Announcer — full-screen flash overlay when the turn switches to you.
- * Appears for ~2.2 seconds then fades out.
+ * Announcer — a "Your turn" banner across the screen when the turn switches
+ * to you. Shows for ~2.4 seconds.
  */
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../store/appStore'
+import '../styles/table.css'
 
 export default function Announcer() {
-  const { gameState, playerId } = useAppStore()
-  const [visible, setVisible]   = useState(false)
-  const [info,    setInfo]       = useState({ title: '', sub: '' })
-  const prevIdRef  = useRef(null)
-  const timerRef   = useRef(null)
+  const currentId = useAppStore((s) => (s.gameState?.status === 'playing' ? s.gameState.current_player_id : null))
+  const playerId = useAppStore((s) => s.playerId)
+  const [sub, setSub] = useState(null)
+  const prevIdRef = useRef(null)
+  const timerRef = useRef(null)
 
   useEffect(() => {
-    if (!gameState || gameState.status !== 'playing') return
-
-    const curr = gameState.current_player_id
+    if (!currentId) return
     const prev = prevIdRef.current
-    prevIdRef.current = curr
+    prevIdRef.current = currentId
 
     // Only fire when the turn *changes* to me
-    if (curr === playerId && prev !== null && prev !== playerId) {
-      let sub = 'Play a matching card or draw from the deck.'
-      if (gameState.challenge_available) {
-        sub = 'Draw the penalty — or challenge the Wild Draw 4 first!'
-      } else if (gameState.draw_stack > 0) {
-        sub = `You must draw ${gameState.draw_stack} card${gameState.draw_stack > 1 ? 's' : ''} from the deck.`
+    if (currentId === playerId && prev !== null && prev !== playerId) {
+      const gs = useAppStore.getState().gameState
+      let text = 'Play a matching card or draw from the deck.'
+      if (gs?.challenge_available) {
+        text = 'Draw the penalty, or challenge the Wild Draw 4 first.'
+      } else if (gs?.draw_stack > 0) {
+        text = `You must draw ${gs.draw_stack} card${gs.draw_stack > 1 ? 's' : ''} from the deck.`
       }
-
-      setInfo({ sub })
-      setVisible(true)
+      setSub(text)
       clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => setVisible(false), 2400)
+      timerRef.current = setTimeout(() => setSub(null), 2400)
     }
+  }, [currentId, playerId])
 
-    return () => clearTimeout(timerRef.current)
-  }, [gameState?.current_player_id, playerId])
+  useEffect(() => () => clearTimeout(timerRef.current), [])
 
-  if (!visible) return null
+  if (!sub) return null
 
   return (
-    <div className="turn-announcer" aria-live="assertive">
-      <div className="turn-announcer__badge">
-        <div className="turn-announcer__label">YOUR TURN</div>
-        <div className="turn-announcer__sub">{info.sub}</div>
+    <div className="tb tb-announce" aria-live="assertive">
+      <div className="tb-announce-band">
+        <div className="tb-announce-title">Your turn</div>
+        <div className="tb-announce-sub">{sub}</div>
       </div>
     </div>
   )

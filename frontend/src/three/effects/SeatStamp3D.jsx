@@ -1,6 +1,6 @@
 /**
  * SeatStamp3D — a one-shot floating text stamp over a player's seat with a
- * ground pulse beneath it. Covers the skip slash ("⊘ SKIPPED"), the UNO
+ * ground pulse beneath it. Covers the skip ("Skipped"), the UNO
  * shout ("UNO!") and penalty labels ("+4") — same mechanics, different
  * styling class. Uses drei <Html> + CSS (the repo is asset-free; no troika
  * font fetches).
@@ -31,7 +31,7 @@ export default function SeatStamp3D({
         distanceFactor={9}
         pointerEvents="none"
       >
-        <div className={`fx-stamp fx-stamp--${variant}`} style={{ '--fx-dur': `${dur}s` }}>
+        <div className={`tb t3-stamp t3-stamp--${variant}`} style={{ '--fx-dur': `${dur}s` }}>
           {text}
         </div>
       </Html>

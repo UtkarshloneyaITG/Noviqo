@@ -63,7 +63,7 @@ export default function TargetStack3D({ topCard, currentColor, suppressId, under
 
       {isWildTop && (
         <Html position={[0, baseY + 0.02, 1.2]} center distanceFactor={9} pointerEvents="none">
-          <div className="pile3d-color" style={{ background: ringColor }}>
+          <div className="tb t3-color" style={{ '--cc': ringColor }}>
             {currentColor}
           </div>
         </Html>

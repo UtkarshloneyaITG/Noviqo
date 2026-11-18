@@ -6,14 +6,13 @@
  *   2. Injects a stable `sendMessage` function into the Zustand store.
  *      Messages sent while the socket is connecting/closed are queued
  *      and flushed on open (stale entries are dropped).
- *   3. On open, resumes the saved session (sessionStorage) by rejoining
- *      the room with the stored player_id, so a page refresh or a
- *      transient drop puts the player straight back into their game.
+ *   3. On open, sends `auth` with the stored session token (the server
+ *      re-binds the account and, if it is still seated, its live game).
  *   4. Schedules a reconnect on unexpected close.
  */
 
 import { useEffect, useRef, useCallback } from 'react'
-import { useAppStore, loadSession } from '../store/appStore'
+import { useAppStore } from '../store/appStore'
 
 export const WS_URL =
   typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL
@@ -59,25 +58,9 @@ export function useWebSocket() {
       setConnected(true)
       setError(null)
 
-      // Resume identity first so the server knows who we are before any
-      // queued action arrives. Live store identity wins (mid-game WS drop);
-      // sessionStorage covers a full page reload.
-      const store = useAppStore.getState()
-      const session =
-        store.playerId && store.roomId
-          ? { playerId: store.playerId, roomId: store.roomId, playerName: store.playerName }
-          : loadSession()
-      if (session?.playerId && session?.roomId) {
-        store.beginResume(session)
-        ws.send(
-          JSON.stringify({
-            type: 'join_room',
-            room_id: session.roomId,
-            player_name: session.playerName || 'Player',
-            player_id: session.playerId,
-          })
-        )
-      }
+      // Authenticate first so the server knows who we are before any
+      // queued action arrives.
+      useAppStore.getState().authenticate()
 
       // Flush queued messages, dropping stale gameplay actions.
       const now = Date.now()

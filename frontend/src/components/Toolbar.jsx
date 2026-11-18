@@ -1,26 +1,33 @@
 /**
- * Toolbar — screen-space HUD shown over the 3D table during play:
- * room code, whose-turn banner, and the Leave button. (The 3D world
- * behind it stays fully orbit-controllable; only these chips capture clicks.)
+ * Toolbar — top-left in-game HUD: the game chip (with casual/ranked), the
+ * play direction in words, and the Leave button. Whose turn it is lives in
+ * the TimerBar.
  */
 import { useAppStore } from '../store/appStore'
+import '../styles/table.css'
 
 export default function Toolbar() {
-  const { gameState, playerId, leaveRoom } = useAppStore()
-  if (!gameState || gameState.status !== 'playing') return null
+  const playing = useAppStore((s) => s.gameState?.status === 'playing')
+  const mode = useAppStore((s) => s.gameState?.mode)
+  const direction = useAppStore((s) => s.gameState?.direction)
+  const leaveRoom = useAppStore((s) => s.leaveRoom)
+  if (!playing) return null
 
-  const { players = [], current_player_id, room_id } = gameState
-  const isMyTurn = current_player_id === playerId
-  const currentName = players.find((p) => p.id === current_player_id)?.name ?? ''
-
+  const ccw = direction === -1
   return (
-    <div className="hud-topleft hud-topleft--3d">
-      <span className="hud-logo">UNO</span>
-      <span className="hud-room">{room_id}</span>
-      <span className="hud-turn">
-        {isMyTurn ? <span className="hud-turn--mine">✦ Your Turn</span> : `${currentName}'s Turn`}
-      </span>
-      <button className="hud-leave" onClick={leaveRoom}>
+    <div className="tb tb-bar">
+      <div className="tb-panel tb-chip">
+        <span className="tb-game">UNO</span>
+        {mode && <span className={`tb-mode tb-mode--${mode}`}>{mode === 'ranked' ? 'Ranked' : 'Casual'}</span>}
+      </div>
+      <div className={`tb-panel tb-chip tb-dir${ccw ? ' tb-dir--ccw' : ''}`} role="status">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+          <path d="M20 4v4h-4" />
+        </svg>
+        <span>{ccw ? 'Counter-clockwise' : 'Clockwise'}</span>
+      </div>
+      <button className="tb-panel tb-btn tb-leave" onClick={leaveRoom}>
         Leave
       </button>
     </div>

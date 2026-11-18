@@ -17,8 +17,8 @@ export default function GlowRing3D() {
 
   return (
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, TABLE_TOP_Y + 0.205, 0]}>
-      <ringGeometry args={[TABLE_RADIUS - 1.5, TABLE_RADIUS - 1.15, 64]} />
-      <meshBasicMaterial color="#5ce0a0" transparent opacity={0.2} depthWrite={false} />
+      <ringGeometry args={[TABLE_RADIUS - 0.75, TABLE_RADIUS - 0.5, 64]} />
+      <meshBasicMaterial color="#ffc53d" transparent opacity={0.2} depthWrite={false} />
     </mesh>
   )
 }

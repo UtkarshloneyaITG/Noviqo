@@ -10,6 +10,7 @@ Supports:
   • Turn-after-draw: player may play the card they just drew, or pass
   • Reconnection-aware player state
 """
+import copy
 import random
 import time
 from enum import Enum
@@ -19,6 +20,8 @@ from .item import Card, Color, CardType
 from .pool import create_deck
 from .member import Player
 
+
+COUNTDOWN_S = 3   # a fresh deal shows 3-2-1 before play opens (and before the first turn clock)
 
 ORDINALS = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th"]
 
@@ -52,6 +55,7 @@ class GameState:
         self.action_log: List[str] = []
         self.skipped_player_id: Optional[str] = None   # set when a Skip card is played
         self.turn_deadline_ms: Optional[int] = None    # epoch ms the current turn must act by
+        self.countdown_until_ms: Optional[int] = None  # epoch ms the opening countdown ends
         # Multi-place ranking
         self.placements: List[dict] = []              # [{rank, id, name}] in finish order
         self.finished_player_ids: Set[str] = set()    # players who have emptied their hand
@@ -66,12 +70,20 @@ class GameState:
         self.kicked_player_ids: Set[str] = set()
         # Set by storage once this round's result is in the history collection
         self.history_logged: bool = False
+        # Table setup from the party that started the game
+        self.mode: str = "casual"                     # 'casual' | 'ranked'
+        self.felt: str = "felt:green"                 # leader's equipped felt
+        self.deck_back: str = "back:classic"          # leader's card back (draw pile)
+        # Filled once the game ends: player_id -> reward summary
+        self.rewards: Dict[str, dict] = {}
+        # Players who left a live game (no coins, count as last)
+        self.departed_ids: Set[str] = set()
 
     # ------------------------------------------------------------------
     # Persistence (plain-data snapshot; storage.py does the I/O)
     # ------------------------------------------------------------------
 
-    _SET_FIELDS = ("uno_called", "finished_player_ids", "kicked_player_ids")
+    _SET_FIELDS = ("uno_called", "finished_player_ids", "kicked_player_ids", "departed_ids")
 
     def to_doc(self) -> dict:
         """Every field as JSON/BSON-safe data. Containers are copied so the
@@ -79,6 +91,7 @@ class GameState:
         doc = dict(vars(self))
         doc["players"] = [
             {"id": p.id, "name": p.name, "is_connected": p.is_connected,
+             "character": p.character, "card_back": p.card_back,
              "hand": [c.to_dict() for c in p.hand]}
             for p in self.players
         ]
@@ -92,6 +105,7 @@ class GameState:
         doc["action_log"] = list(self.action_log)
         doc["scores"] = dict(self.scores)
         doc["settings"] = dict(self.settings)
+        doc["rewards"] = copy.deepcopy(self.rewards)
         return doc
 
     @classmethod
@@ -104,6 +118,7 @@ class GameState:
                 setattr(g, k, v)
         g.players = [
             Player(name=p["name"], id=p["id"], is_connected=p["is_connected"],
+                   character=p.get("character", "char:m-Casual"), card_back=p.get("card_back", "back:classic"),
                    hand=[Card.from_dict(c) for c in p["hand"]])
             for p in doc.get("players", [])
         ]
@@ -146,6 +161,7 @@ class GameState:
         p = self._find_player(player_id)
         if p:
             p.is_connected = True
+            self.departed_ids.discard(player_id)
             return True
         return False
 
@@ -155,6 +171,8 @@ class GameState:
         p = self._find_player(player_id)
         if p:
             p.is_connected = False
+            if self.status == GameStatus.PLAYING:
+                self.departed_ids.add(player_id)
             self._auto_skip_offline()
 
     # ------------------------------------------------------------------
@@ -174,6 +192,8 @@ class GameState:
         self.last_round_points = 0
         self.round_points_awarded = False
         self.history_logged = False
+        self.rewards = {}
+        self.departed_ids = set()
         self.deck = create_deck()
         self.discard_pile = []
         self.current_player_index = 0
@@ -189,6 +209,7 @@ class GameState:
         self.finished_player_ids = set()
         self.skipped_player_id = None
         self.action_log = []
+        self.countdown_until_ms = int((time.time() + COUNTDOWN_S) * 1000)
 
         # Deal 7 cards to each player
         for player in self.players:
@@ -277,6 +298,8 @@ class GameState:
         self.turn_deadline_ms = None
         self.action_log = []
         self.last_action = ""
+        self.rewards = {}
+        self.departed_ids = set()
         self.status = GameStatus.WAITING
         return {"success": True, "removed_player_ids": removed}
 
@@ -715,10 +738,15 @@ class GameState:
                 max(0, self.turn_deadline_ms - int(time.time() * 1000))
                 if self.turn_deadline_ms else None
             ),
+            "countdown_ms_left": max(0, (self.countdown_until_ms or 0) - int(time.time() * 1000)),
             "placements": list(self.placements),
             "last_round_points": self.last_round_points,
             "rounds_played": self.rounds_played,
             "settings": dict(self.settings),
+            "mode": self.mode,
+            "felt": self.felt,
+            "deck_back": self.deck_back,
+            "rewards": dict(self.rewards),
             "last_action": self.last_action,
             "action_log": self.action_log[-15:],
             "host_player_id": self.host_player_id,
@@ -740,6 +768,8 @@ class GameState:
                     "card_count": len(player.hand),
                     "has_called_uno": player.id in self.uno_called,
                     "is_connected": player.is_connected,
+                    "character": player.character,
+                    "card_back": player.card_back,
                     "rank": finished_rank,   # None = still playing; 1/2/3… = placed
                     "score": self.scores.get(player.id, 0),
                 }

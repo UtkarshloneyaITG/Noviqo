@@ -1448,6 +1448,35 @@ class TestRoomManagerLifecycle:
         assert rm.list_open_rooms() == []
 
 
+class TestPlayerCosmeticsAndDepartures:
+    def test_state_carries_cosmetics_mode_and_table(self):
+        g = make_game("A", "B")
+        p0(g).character, p0(g).card_back = "char:w-Punk", "back:neon"
+        g.mode, g.felt, g.deck_back = "ranked", "felt:violet", "back:gold"
+        force_start(g)
+        s = g.get_state_for_player(p1(g).id)
+        me = next(p for p in s["players"] if p["id"] == p0(g).id)
+        assert (me["character"], me["card_back"]) == ("char:w-Punk", "back:neon")
+        assert (s["mode"], s["felt"], s["deck_back"], s["rewards"]) == ("ranked", "felt:violet", "back:gold", {})
+
+    def test_leaving_mid_game_marks_departed_and_returning_clears_it(self):
+        g = three_way()
+        g.disconnect_player(p2(g).id)
+        assert p2(g).id in g.departed_ids
+        g.reconnect_player(p2(g).id)
+        assert p2(g).id not in g.departed_ids
+
+    def test_new_round_clears_rewards_and_departures(self):
+        g = make_game("A", "B")
+        force_start(g)
+        g.rewards = {"x": {"coins": 1}}
+        g.departed_ids.add("x")
+        finish_game(g)
+        g.reset_for_rematch()
+        g.start_game()
+        assert g.rewards == {} and g.departed_ids == set()
+
+
 class TestPersistenceRoundTrip:
     def _busy_game(self) -> GameState:
         g = three_way()
@@ -1491,6 +1520,12 @@ class TestPersistenceRoundTrip:
 # ─────────────────────────────────────────────────────────────────────────────
 # Run
 # ─────────────────────────────────────────────────────────────────────────────
+
+def test_new_deal_opens_with_a_countdown():
+    g = make_game("A", "B")
+    g.start_game()
+    assert 2_000 < g.get_state_for_player(g.players[0].id)["countdown_ms_left"] <= 3_000
+
 
 if __name__ == "__main__":
     import subprocess, sys

@@ -1,126 +1,83 @@
 /**
- * Room3D — the atmosphere around the table: a dark lounge with a hanging
- * pendant lamp over the felt, layered cinematic lighting (warm key from the
- * lamp + cool fill + coloured rim accents), wall sconces, floating dust, a
- * soft volumetric light cone, and grounded contact shadows.
+ * Room3D — the rooftop at dusk around the table (same world as the lobby):
+ * a gridded rooftop floor that fades into the horizon haze, the city skyline
+ * on a far arc (so it turns with the camera when you look around), floating
+ * motes, and the lobby's lighting — warm key, cyan + magenta rims, soft sky.
  *
- * This replaces the old "just a spotlight" setup. All lights live here.
+ * All environment lights live here (none casts shadows — the table and
+ * stools are grounded by soft blobs instead). Background colour and fog are
+ * set by TableWorld.
  */
-import { Sparkles, ContactShadows } from '@react-three/drei'
-import { TABLE_TOP_Y } from './layout'
+import { useEffect, useMemo } from 'react'
+import { Sparkles } from '@react-three/drei'
+import * as THREE from 'three'
+import { skyTexture, gridTexture, glowTexture, PALETTE } from './world/sky'
+import { FLOOR_Y } from './layout'
 
-const LAMP_Y = 7.2
+// The skyline arc: centred on the table, behind it, wide enough to cover the
+// full look-around range. The sky is repeated twice across the arc (seams fall
+// between buildings) so it isn't stretched; its horizon sits at the hazy far
+// edge of the floor.
+const ARC_R = 60
+const ARC_SPAN = 3.4 // radians
+const SKY_H = ((ARC_R * ARC_SPAN) / 2) * (900 / 1600) // keep the canvas aspect per copy
+const HORIZON_Y = FLOOR_Y - 3 // world height of the skyline's base
+const SKY_Y = HORIZON_Y + SKY_H * (0.5 - 0.4533) // 0.4533 = horizon height in the canvas (from bottom)
+
+function Skyline() {
+  const map = useMemo(() => {
+    const t = skyTexture().clone()
+    t.wrapS = THREE.RepeatWrapping
+    t.repeat.x = 2
+    t.offset.x = 0.5 // one copy's centre (the sun) straight behind the table
+    return t
+  }, [])
+  useEffect(() => () => map.dispose(), [map])
+  return (
+    <mesh position={[0, SKY_Y, 0]} renderOrder={-1}>
+      <cylinderGeometry args={[ARC_R, ARC_R, SKY_H, 96, 1, true, Math.PI - ARC_SPAN / 2, ARC_SPAN]} />
+      <meshBasicMaterial map={map} side={THREE.BackSide} fog={false} toneMapped={false} depthWrite={false} />
+    </mesh>
+  )
+}
 
 export default function Room3D() {
   return (
     <group>
-      {/* ── Lighting rig (brighter atmosphere, soft lamp) ─────────── */}
-      <ambientLight intensity={0.7} color="#d4dcff" />
-      <hemisphereLight args={['#bcc8ff', '#1c1410', 0.75]} />
-
-      {/* The pendant bulb as an omnidirectional light source — emits in all
-          directions with soft inverse-square falloff (no sharp cone/pool). */}
-      <pointLight
-        position={[0, LAMP_Y, 0]}
-        intensity={260}
-        distance={34}
-        decay={2}
-        color="#ffe9d0"
+      {/* ── Lighting (lobby rig, scaled to the table) ─────────────── */}
+      <hemisphereLight args={[0xa9b8ff, 0x1a1030, 0.8]} />
+      <directionalLight
+        position={[6, 14, 12]}
+        intensity={2.1}
+        color={0xffe3c2}
       />
+      <directionalLight position={[-12, 6, -10]} intensity={2.6} color={0x4fd8ff} />
+      <directionalLight position={[12, 6, -10]} intensity={2.0} color={0xff4fa3} />
+      <directionalLight position={[0, 3, 16]} intensity={0.6} color={0x9fb0ff} />
 
-      {/* Cool front fill so faces/cards read clearly */}
-      <pointLight position={[0, 5, 11]} intensity={24} distance={28} decay={1.6} color="#bcd2ff" />
+      <Skyline />
 
-      {/* ── Pendant lamp ─────────────────────────────────────────── */}
-      <group>
-        {/* Ceiling mount */}
-        <mesh position={[0, 10.95, 0]}>
-          <cylinderGeometry args={[0.22, 0.22, 0.12, 20]} />
-          <meshStandardMaterial color="#15151a" metalness={0.6} roughness={0.5} />
-        </mesh>
-        {/* Cord */}
-        <mesh position={[0, (10.9 + LAMP_Y + 0.9) / 2, 0]}>
-          <cylinderGeometry args={[0.028, 0.028, 10.9 - (LAMP_Y + 0.9), 8]} />
-          <meshStandardMaterial color="#0a0a0a" />
-        </mesh>
-        {/* Brass shade */}
-        <mesh position={[0, LAMP_Y + 0.45, 0]}>
-          <coneGeometry args={[1.75, 1.25, 44, 1, true]} />
-          <meshStandardMaterial color="#9c7a3c" metalness={0.9} roughness={0.32} side={2} />
-        </mesh>
-        {/* Soft inner lining (warm-white, very transparent) */}
-        <mesh position={[0, LAMP_Y + 0.45, 0]}>
-          <coneGeometry args={[1.66, 1.18, 44, 1, true]} />
-          <meshBasicMaterial color="#ffeede" side={1} transparent opacity={0.35} depthWrite={false} />
-        </mesh>
-        {/* Glowing mouth at the shade opening (warm-white, transparent) */}
-        <mesh position={[0, LAMP_Y - 0.16, 0]} rotation={[Math.PI / 2, 0, 0]}>
-          <circleGeometry args={[1.62, 44]} />
-          <meshBasicMaterial color="#fff1df" side={2} transparent opacity={0.3} depthWrite={false} />
-        </mesh>
-        {/* Bulb */}
-        <mesh position={[0, LAMP_Y + 0.02, 0]}>
-          <sphereGeometry args={[0.32, 20, 20]} />
-          <meshStandardMaterial color="#fffaf0" emissive="#ffe6c2" emissiveIntensity={2.6} />
-        </mesh>
-        {/* Soft spherical halos — the glow radiates outward in all directions */}
-        <mesh position={[0, LAMP_Y, 0]}>
-          <sphereGeometry args={[0.95, 16, 16]} />
-          <meshBasicMaterial color="#fff3e2" transparent opacity={0.12} depthWrite={false} />
-        </mesh>
-        <mesh position={[0, LAMP_Y, 0]}>
-          <sphereGeometry args={[1.8, 20, 20]} />
-          <meshBasicMaterial color="#ffeedd" transparent opacity={0.05} depthWrite={false} />
-        </mesh>
-      </group>
-
-      {/* ── Room shell ───────────────────────────────────────────── */}
-      {/* Floor */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
-        <circleGeometry args={[30, 48]} />
-        <meshStandardMaterial color="#0b0c12" roughness={0.5} metalness={0.4} />
-      </mesh>
-      {/* Glowing ground ring echoing the table */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.38, 0]}>
-        <ringGeometry args={[8.2, 9.2, 80]} />
-        <meshBasicMaterial color="#22386a" transparent opacity={0.35} />
-      </mesh>
-      {/* Surrounding wall */}
-      <mesh position={[0, 7, 0]}>
-        <cylinderGeometry args={[24, 24, 22, 64, 1, true]} />
-        <meshStandardMaterial color="#0a0a11" roughness={1} metalness={0} side={1} />
+      {/* Rooftop floor with the faint cyan grid */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y, 0]}>
+        <planeGeometry args={[80, 80]} />
+        <meshStandardMaterial map={gridTexture()} roughness={0.55} metalness={0.3} />
       </mesh>
 
-      {/* Wall sconces for depth (emissive only — bloom makes them glow) */}
-      {[-1, 1].map((s) => (
-        <mesh key={s} position={[s * 14, 3.6, -12]}>
-          <sphereGeometry args={[0.3, 12, 12]} />
-          <meshStandardMaterial color="#ffcaa0" emissive="#ff9a4d" emissiveIntensity={2.4} />
-        </mesh>
-      ))}
+      {/* Soft cyan pool of light around the table area */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, FLOOR_Y + 0.01, 0]}>
+        <planeGeometry args={[26, 26]} />
+        <meshBasicMaterial
+          map={glowTexture()}
+          color={PALETTE.cyan}
+          transparent
+          opacity={0.16}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
 
-      {/* ── Atmosphere ───────────────────────────────────────────── */}
-      <Sparkles
-        count={28}
-        scale={[18, 8, 18]}
-        position={[0, 4.5, 0]}
-        size={2}
-        speed={0.2}
-        opacity={0.45}
-        color="#ffe6b0"
-      />
-
-      {/* Static soft contact shadow (rendered once — no per-frame cost) */}
-      <ContactShadows
-        frames={1}
-        position={[0, -0.39, 0]}
-        scale={30}
-        far={6}
-        blur={2.6}
-        opacity={0.45}
-        resolution={512}
-        color="#000000"
-      />
+      {/* Floating motes */}
+      <Sparkles count={60} scale={[26, 8, 22]} position={[0, FLOOR_Y + 4, -2]} size={3} speed={0.25} opacity={0.6} color="#ffd9a8" />
     </group>
   )
 }

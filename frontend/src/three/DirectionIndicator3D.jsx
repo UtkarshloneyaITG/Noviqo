@@ -1,20 +1,24 @@
 /**
- * DirectionIndicator3D — a slowly spinning arrow ring at the table centre
- * showing the current play direction (clockwise / counter-clockwise).
+ * DirectionIndicator3D — a slowly turning glowing arrow ring at the table
+ * centre showing the play direction (clockwise / counter-clockwise). The
+ * arrowhead leads the motion; the HUD spells the direction out in words.
  */
 import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { Html } from '@react-three/drei'
+import * as THREE from 'three'
+import { PALETTE } from './world/sky'
 import { TABLE_TOP_Y } from './layout'
+
+const R = 0.9
+const MAT = new THREE.MeshBasicMaterial({ color: new THREE.Color(PALETTE.cyan).multiplyScalar(2) }) // HDR, so it blooms
 
 export default function DirectionIndicator3D({ direction = 1 }) {
   const ref = useRef()
-  const matRef = useRef()
   const prevDir = useRef(direction)
   const boost = useRef(1)
 
   // A direction flip kicks the ring into a dramatic over-spin that eases
-  // back to the normal rate, with a matching glow/scale pulse.
+  // back to the normal rate, with a matching scale pulse.
   if (prevDir.current !== direction) {
     prevDir.current = direction
     boost.current = 9
@@ -24,27 +28,21 @@ export default function DirectionIndicator3D({ direction = 1 }) {
     if (!ref.current) return
     boost.current += (1 - boost.current) * Math.min(1, dt * 3)
     ref.current.rotation.z -= direction * dt * 0.4 * boost.current
-    const excite = boost.current - 1
-    ref.current.scale.setScalar(1 + excite * 0.04)
-    if (matRef.current) matRef.current.emissiveIntensity = 0.6 + excite * 0.5
+    ref.current.scale.setScalar(1 + (boost.current - 1) * 0.04)
   })
-  const y = TABLE_TOP_Y + 0.23
 
+  // Clockwise (seen from above) leads with the arc's start; counter-clockwise with its end.
+  const cw = direction === 1
   return (
-    <group position={[0, y, 0]}>
-      <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.9, 0.06, 12, 48, Math.PI * 1.5]} />
-        <meshStandardMaterial
-          ref={matRef}
-          color="#ffd84d"
-          emissive="#7a5a00"
-          emissiveIntensity={0.6}
-          roughness={0.4}
-        />
-      </mesh>
-      <Html center distanceFactor={10} position={[0, 0.02, 0]} pointerEvents="none">
-        <div className="dir3d">{direction === 1 ? '↻ CW' : '↺ CCW'}</div>
-      </Html>
+    <group position={[0, TABLE_TOP_Y + 0.23, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <group ref={ref}>
+        <mesh material={MAT}>
+          <torusGeometry args={[R, 0.05, 10, 48, Math.PI * 1.5]} />
+        </mesh>
+        <mesh material={MAT} position={cw ? [R, 0, 0] : [0, -R, 0]} rotation={[0, 0, cw ? Math.PI : -Math.PI / 2]} scale={[1, 1, 0.35]}>
+          <coneGeometry args={[0.17, 0.34, 3]} />
+        </mesh>
+      </group>
     </group>
   )
 }

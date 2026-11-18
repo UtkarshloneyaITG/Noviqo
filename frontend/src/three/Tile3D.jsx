@@ -11,16 +11,40 @@
  *   playable    glowing outline + lift to signal a legal play
  *   dimmed      slightly darken non-playable cards
  *   onClick     pointer click handler (raycast)
+ *   back        CARD_BACKS style id for the back design (default when missing)
  *   ...group props (position/rotation/scale) are spread onto the wrapper group
+ *
+ * Materials are shared module-wide (one per texture + dim flag, two edge
+ * variants, one glow), so a hand of cards costs no per-card material/shader
+ * work; a playable card adds a single glow frame mesh.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CARD_T, getCardFaceTexture, getCardBackTexture } from './tileTextures'
 import { getCardGeometries } from './tileGeometry'
 
-const EDGE_COLOR = '#f4f4f4'
 const FACE_OFFSET = CARD_T / 2 + 0.0012
+
+// Playable cards glow only on the BORDER (the rim + a frame behind the card);
+// the face itself is never tinted.
+const EDGE = new THREE.MeshLambertMaterial({ color: '#f4f4f4' })
+const EDGE_HOT = new THREE.MeshLambertMaterial({ color: '#fff0b0', emissive: '#ffd24a', emissiveIntensity: 1.1 })
+const GLOW = new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd24a').multiplyScalar(1.6), transparent: true, opacity: 0.95, depthWrite: false }) // HDR, so it blooms
+const GLOW_HOVER = new THREE.MeshBasicMaterial({ color: new THREE.Color('#fff7c8').multiplyScalar(1.6), transparent: true, opacity: 0.95, depthWrite: false })
+const DIM = new THREE.Color().setScalar(0.68) // = the old 32% black veil, without the extra mesh
+
+const faceMats = new Map()
+function faceMaterial(tex, dim = false) {
+  const key = tex.uuid + (dim ? ':dim' : '')
+  let m = faceMats.get(key)
+  if (!m) {
+    m = new THREE.MeshLambertMaterial({ map: tex })
+    if (dim) m.color.copy(DIM)
+    faceMats.set(key, m)
+  }
+  return m
+}
 
 export default function Tile3D({
   card = null,
@@ -30,6 +54,7 @@ export default function Tile3D({
   onClick,
   liftOnHover = true,
   renderOrder = 0,
+  back: backStyle, // CARD_BACKS style id for the back face (default design when missing)
   ...groupProps
 }) {
   const groupRef = useRef()
@@ -43,25 +68,11 @@ export default function Tile3D({
   }, [hovered])
 
   const { front, back, body } = getCardGeometries()
-  const backTex = getCardBackTexture()
-  const faceTex = useMemo(
-    () => (card && !faceDown ? getCardFaceTexture(card) : backTex),
-    [card, faceDown, backTex],
-  )
-
-  const { edgeMat, frontMat, backMat } = useMemo(() => {
-    return {
-      // Playable cards glow only on the BORDER (the rim) — the face is never
-      // tinted; the glow comes from the edge material + the Outlines below.
-      edgeMat: new THREE.MeshLambertMaterial({
-        color: playable ? '#fff0b0' : EDGE_COLOR,
-        emissive: playable ? '#ffd24a' : '#000000',
-        emissiveIntensity: playable ? 1.1 : 0,
-      }),
-      frontMat: new THREE.MeshLambertMaterial({ map: faceTex }),
-      backMat: new THREE.MeshLambertMaterial({ map: backTex }),
-    }
-  }, [faceTex, backTex, playable])
+  const backTex = getCardBackTexture(backStyle)
+  const faceTex = card && !faceDown ? getCardFaceTexture(card) : backTex
+  const edgeMat = playable ? EDGE_HOT : EDGE
+  const frontMat = faceMaterial(faceTex, dimmed)
+  const backMat = faceMaterial(backTex)
 
   const innerRef = useRef()
 
@@ -117,22 +128,14 @@ export default function Tile3D({
       >
       </mesh>
 
-      {/* Glowing border frame behind playable cards (border glow, not a face
-          tint) — a bright inner frame + a softer outer halo. */}
+      {/* Glowing border frame behind playable cards (bloom softens it) */}
       {playable && (
-        <>
-          <mesh geometry={front} position={[0, 0, -FACE_OFFSET - 0.012]} scale={1.12}>
-            <meshBasicMaterial
-              color={hovered ? '#fff7c8' : '#ffd24a'}
-              transparent
-              opacity={0.95}
-              depthWrite={false}
-            />
-          </mesh>
-          <mesh geometry={front} position={[0, 0, -FACE_OFFSET - 0.02]} scale={1.26}>
-            <meshBasicMaterial color="#ffcf3a" transparent opacity={0.4} depthWrite={false} />
-          </mesh>
-        </>
+        <mesh
+          geometry={front}
+          material={hovered ? GLOW_HOVER : GLOW}
+          position={[0, 0, -FACE_OFFSET - 0.012]}
+          scale={1.14}
+        />
       )}
 
       {/* Front face art */}
@@ -147,12 +150,6 @@ export default function Tile3D({
         renderOrder={renderOrder}
       />
 
-      {/* Dim veil over non-playable cards */}
-      {dimmed && (
-        <mesh geometry={front} position={[0, 0, FACE_OFFSET + 0.001]}>
-          <meshBasicMaterial color="#000000" transparent opacity={0.32} depthWrite={false} />
-        </mesh>
-      )}
       </group>
     </group>
   )

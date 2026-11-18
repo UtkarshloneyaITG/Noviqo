@@ -17,8 +17,11 @@ sessions survive a server restart.
 ```
 ├── backend/
 │   ├── main.py                    # FastAPI app: WebSocket router, timers, reconnect handling
-│   ├── storage.py                 # MongoDB persistence (live channels + history)
+│   ├── storage.py                 # MongoDB persistence (channels, history, accounts, sessions, chat)
 │   ├── core/                      # Session engine (pure logic, no I/O)
+│   │   ├── accounts.py            # Sign-in, sessions, profiles, friends, items
+│   │   ├── parties.py             # Groups that start sessions together
+│   │   ├── catalog.py             # Items, milestones, ranking maths
 │   │   ├── session.py
 │   │   ├── channel_manager.py
 │   │   ├── member.py
@@ -68,7 +71,7 @@ npm run dev                    # http://localhost:3000
 
 | Variable      | Where             | Purpose |
 |---------------|-------------------|---------|
-| `DB`          | `backend/.env`    | MongoDB connection string. The database named in its path stores the `channels` (live state) and `history` collections. If unset, the server runs in memory only. |
+| `DB`          | `backend/.env`    | MongoDB connection string. The database named in its path stores the `channels` (live state), `history`, `accounts`, `sessions` and `chat` collections. If unset, the server runs in memory only. |
 | `VITE_WS_URL` | `frontend/.env`   | WebSocket URL of the backend, e.g. `ws://localhost:8000/ws` for local development or `wss://your-backend/ws` in production. |
 
 `.env` files are gitignored; see the `.env.example` files.
@@ -78,9 +81,17 @@ npm run dev                    # http://localhost:3000
 | Method | Path      | Description                 |
 |--------|-----------|-----------------------------|
 | GET    | `/health` | Liveness check → `{"status": "ok"}` |
-| GET    | `/rooms`  | Open channels that can be joined |
 
 All other traffic is JSON messages over `/ws`.
+
+## Accounts
+
+Members sign in with an `@username` (fixed, 3–20 letters, numbers or `_`) and a
+password; a separate display name can be changed at any time. Passwords are stored
+as salted scrypt hashes. A sign-in lasts 14 days; the browser keeps the session
+token and the server stores only its SHA-256 hash, which MongoDB expires
+automatically. Member data (profile, friends, items) is saved in the `accounts`
+collection.
 
 ## Tests
 

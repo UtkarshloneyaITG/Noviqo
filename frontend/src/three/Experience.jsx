@@ -1,54 +1,56 @@
 /**
  * Experience — the persistent 3D world.
  *
- * A single <Canvas> hosts the room, round table, lighting and orbit camera.
- * Depending on game status it shows the 3D lobby or the 3D play table.
- * Screen-space HUD/modals are layered on top in App.jsx (standard for a
- * 3D game — the WebGL world is fully 3D and orbit-controllable).
+ * One <Canvas> for the whole app: the lobby (LobbyWorld) when not in a game,
+ * the table (TableWorld) while a game is playing or finished. Each world owns
+ * its background, lights and camera; post-processing lives here.
+ * Screen-space HUD/modals are layered on top in App.jsx.
  */
-import { Suspense } from 'react'
+import { memo, Suspense, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
+import { PerformanceMonitor } from '@react-three/drei'
+import { EffectComposer, Bloom, ToneMapping } from '@react-three/postprocessing'
+import { ToneMappingMode } from 'postprocessing'
 import { useAppStore } from '../store/appStore'
-import Room3D from './Room3D'
-import Table3D from './Table3D'
-import Entry3D from './Entry3D'
-import Workspace3D from './Workspace3D'
-import LookControls from './LookControls'
+import TableWorld from './TableWorld'
+import LobbyWorld from './lobby/LobbyWorld'
 
-function World() {
-  const status = useAppStore((s) => s.gameState?.status)
-  const inGame = status === 'playing' || status === 'finished'
+function Experience() {
+  const inGame = useAppStore((s) => s.gameState?.status === 'playing' || s.gameState?.status === 'finished')
+  const [dpr, setDpr] = useState(1.5)
+  const [fx, setFx] = useState(true)
+  const declines = useRef(0)
 
-  return (
-    <>
-      <Room3D />
-      <Table3D />
+  // ponytail: one-way degrade (resolution first, then post-processing); a reload restores full quality.
+  const decline = () => {
+    declines.current += 1
+    if (declines.current === 1) setDpr(1)
+    else setFx(false)
+  }
 
-      <Suspense fallback={null}>{inGame ? <Workspace3D /> : <Entry3D />}</Suspense>
-
-      {/* Fixed seat; drag to look around (up/down/left/right) — no orbit/zoom */}
-      <LookControls position={[0, 4.6, 10]} lookAt={[0, 1.1, 1]} />
-
-      {/* Cinematic post: light bloom on emissive glows + a soft vignette */}
-      <EffectComposer disableNormalPass multisampling={0}>
-        <Bloom intensity={0.5} luminanceThreshold={0.65} luminanceSmoothing={0.25} mipmapBlur />
-        <Vignette eskil={false} offset={0.3} darkness={0.8} />
-      </EffectComposer>
-    </>
-  )
-}
-
-export default function Experience() {
   return (
     <Canvas
-      dpr={[1, 1.5]}
+      shadows
+      dpr={[1, dpr]}
       camera={{ position: [0, 4.6, 10], fov: 46 }}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
+      gl={{ antialias: false, powerPreference: 'high-performance' }}
     >
-      <color attach="background" args={['#06060a']} />
-      <fog attach="fog" args={['#06060a', 18, 34]} />
-      <World />
+      <PerformanceMonitor onDecline={decline} flipflops={3} onFallback={() => (setDpr(1), setFx(false))} />
+
+      <Suspense fallback={null}>{inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
+
+      {/* The composer renders the scene un-tonemapped, so bloom only picks up
+          what is truly bright (HDR rims, beams) and never the characters;
+          ACES is merged into the same pass afterwards. */}
+      {fx && (
+        <EffectComposer multisampling={0}>
+          <Bloom mipmapBlur intensity={0.8} luminanceThreshold={0.88} luminanceSmoothing={0.2} />
+          <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+        </EffectComposer>
+      )}
     </Canvas>
   )
 }
+
+// No props: never re-render because App did.
+export default memo(Experience)

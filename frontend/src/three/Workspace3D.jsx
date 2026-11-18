@@ -10,13 +10,14 @@
  *   • a hand grew           → card(s) fly from the deck (fanned out for +2/+4,
  *                             with a "+N" stamp over the victim)
  *   • status → playing      → the opening 7-card deal is animated round-robin
- *   • skipped_player_id set → "⊘ SKIPPED" stamp over the seat
+ *   • skipped_player_id set → "Skipped" stamp over the seat
  *   • direction flipped     → ring over-spin + radial pulse at table centre
  *   • UNO called            → "UNO!" shout over the caller's seat
  *   • status → finished     → confetti burst over the table
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
+import '../styles/table.css'
 import SourceStack3D from './SourceStack3D'
 import TargetStack3D from './TargetStack3D'
 import DirectionIndicator3D from './DirectionIndicator3D'
@@ -39,7 +40,9 @@ const DRAW_POS = [-2.4, TABLE_TOP_Y + 0.5, 0]
 const DRAW_ROT = [Math.PI / 2, 0, 0] // face-down (back up)
 
 export default function Workspace3D() {
-  const { gameState, playerId } = useAppStore()
+  // Narrow selectors: chat bubbles, toasts, timers etc. never re-render the table.
+  const gameState = useAppStore((s) => s.gameState)
+  const playerId = useAppStore((s) => s.playerId)
   const [flying, setFlying] = useState([])
   const [fx, setFx] = useState([])
   const [dealing, setDealing] = useState(false)
@@ -141,7 +144,7 @@ export default function Workspace3D() {
             })
           }
           if (penalty) {
-            stamp({ type: 'stamp', variant: 'penalty', text: `+${delta}`, pos: dest.pos, pulseColor: '#ff5050' })
+            stamp({ type: 'stamp', variant: 'penalty', text: `+${delta}`, pos: dest.pos, pulseColor: '#ff3f5f' })
           }
         }
       })
@@ -149,7 +152,7 @@ export default function Workspace3D() {
       // ── Skip ──
       if (gameState.skipped_player_id && gameState.skipped_player_id !== p.skippedId) {
         const seat = seatAnchor(gameState.skipped_player_id, players, playerId)
-        stamp({ type: 'stamp', variant: 'skip', text: '⊘ SKIPPED', pos: seat.pos, pulseColor: '#ff5050' })
+        stamp({ type: 'stamp', variant: 'skip', text: 'Skipped', pos: seat.pos, pulseColor: '#ff3f5f' })
       }
 
       // ── Reverse ──
@@ -161,7 +164,7 @@ export default function Workspace3D() {
       players.forEach((pl) => {
         if (pl.has_called_uno && !p.unoFlags?.[pl.id]) {
           const seat = seatAnchor(pl.id, players, playerId)
-          stamp({ type: 'stamp', variant: 'uno', text: 'UNO!', pos: seat.pos, pulseColor: '#ffd84d' })
+          stamp({ type: 'stamp', variant: 'uno', text: 'UNO!', pos: seat.pos, pulseColor: '#ffc53d' })
         }
       })
 
@@ -197,6 +200,10 @@ export default function Workspace3D() {
 
   useEffect(() => () => clearTimeout(dealTimer.current), [])
 
+  // Stable seat objects, so memoised opponents skip re-rendering while cards fly.
+  const opponentCount = orderedOpponents(gameState?.players || [], playerId).length
+  const seats = useMemo(() => opponentSeats(opponentCount), [opponentCount])
+
   if (!gameState) return null
 
   const {
@@ -212,7 +219,6 @@ export default function Workspace3D() {
 
   const isMyTurn = current_player_id === playerId
   const opponents = orderedOpponents(players, playerId)
-  const seats = opponentSeats(opponents.length)
 
   // Highlight the deck when it's your turn and you should/must draw.
   const myHand = gameState.my_hand || []
@@ -241,6 +247,7 @@ export default function Workspace3D() {
         isMyTurn={isMyTurn && !gameState.drawn_card_id}
         drawStack={draw_stack}
         mustDraw={mustDraw}
+        back={gameState.deck_back}
       />
       <TargetStack3D
         topCard={discard_top}
@@ -257,7 +264,7 @@ export default function Workspace3D() {
           player={p}
           seat={seats[i]}
           hue={playerHue(players.findIndex((x) => x.id === p.id))}
-          isCurrentTurn={p.id === current_player_id}
+          isCurrentTurn={status === 'playing' && p.id === current_player_id}
           dealing={dealing}
         />
       ))}
@@ -269,6 +276,7 @@ export default function Workspace3D() {
           key={f.key}
           card={f.card}
           faceDown={f.faceDown}
+          back={gameState.deck_back}
           from={f.from}
           fromRot={f.fromRot}
           via={f.via}
@@ -287,7 +295,7 @@ export default function Workspace3D() {
             <RadialPulse3D
               key={f.key}
               position={[0, TABLE_TOP_Y + 0.24, 0]}
-              color="#ffd84d"
+              color="#4fd8ff"
               onDone={() => handleFxDone(f.key)}
             />
           )
