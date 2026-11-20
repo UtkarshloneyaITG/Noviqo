@@ -362,3 +362,8 @@
 @media (max-height: 500px) {
   .lb-banner { display: none; }
 }
+
+/* ── Admin (Settings, admins only) ───────────────────────────────────── */
+.lb-admin { display: grid; grid-template-columns: 1fr 130px auto; gap: 10px; align-items: end; margin: 6px 0 4px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.lb-admin h3 { grid-column: 1 / -1; margin: 0; font: 800 18px/1 var(--display); letter-spacing: .04em; color: var(--amber); }
+.lb-admin .lb-btn { height: 38px; }

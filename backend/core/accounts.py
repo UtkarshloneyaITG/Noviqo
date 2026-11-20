@@ -21,6 +21,7 @@ from . import catalog
 
 SESSION_MS = 14 * 24 * 3600 * 1000      # fixed from sign-in; using it doesn't extend it
 START_COINS = 200
+MAX_GIFT = 1_000_000          # most coins an admin can give in one go
 MAX_FRIENDS = 100
 _USERNAME = re.compile(r"^@[a-z0-9_]{3,20}$")
 _SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1, "dklen": 32}
@@ -54,6 +55,7 @@ class Accounts:
         self.dirty_accounts: set = set()
         self.dirty_sessions: set = set()
         self.deleted_sessions: set = set()
+        self.admins: set = set()                    # usernames ("@name") that may give coins; main.py fills it from ADMINS
 
     # ── persistence ──────────────────────────────────────────────────────
     def load(self, account_docs: Iterable[dict], session_docs: Iterable[dict]) -> None:
@@ -172,7 +174,19 @@ class Accounts:
         return {"id": aid, "username": d["username"], "display_name": d["display_name"], "coins": d["coins"],
                 "stats": dict(d["stats"]), "rank": catalog.rank_info(d["rp"].get("uno", 0)),
                 "inventory": list(d["inventory"]), "equipped": dict(d["equipped"]),
-                "milestones": catalog.milestone_progress(d)}
+                "milestones": catalog.milestone_progress(d), "admin": d["username"] in self.admins}
+
+    def give_coins(self, username, amount) -> str:
+        """Admin gift. Changes the live account (and marks it for saving), so a
+        running server never writes an older balance over it."""
+        if isinstance(amount, bool) or not isinstance(amount, int) or not 1 <= amount <= MAX_GIFT:
+            raise AccountError(f"Give between 1 and {MAX_GIFT:,} coins.")
+        aid = self.by_username.get(str(username or "").strip().lower())
+        if not aid:
+            raise AccountError("No player has that username.")
+        self.accounts[aid]["coins"] += amount
+        self._touch(aid)
+        return aid
 
     def person(self, aid: str) -> dict:
         d = self.accounts[aid]

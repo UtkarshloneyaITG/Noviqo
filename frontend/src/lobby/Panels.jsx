@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { Coin, Crest, GameArt, ItemArt, Modal, TIERS, rankColor, useItemMap } from './ui'
+import { Coin, Crest, GameArt, ItemArt, Modal, TIERS, USERNAME_RE, normalizeUsername, rankColor, useItemMap } from './ui'
 
 const KINDS = [
   ['character', 'Characters'],
@@ -262,10 +262,43 @@ export function Settings({ onClose }) {
         <output className="lb-fixed">{profile.username}</output>
         <small className="lb-hint">Your @username can't be changed.</small>
       </div>
+      {profile.admin && <AdminGive />}
       <button className="lb-btn danger lb-signout" onClick={signOut}>
         Sign out
       </button>
     </Modal>
+  )
+}
+
+/** Admins only (the server checks too): give coins to any player by @username. */
+function AdminGive() {
+  const send = useAppStore((s) => s.send)
+  const [who, setWho] = useState('')
+  const [amount, setAmount] = useState('10000')
+  const username = normalizeUsername(who)
+  const n = Number(amount)
+  const ok = USERNAME_RE.test(username) && Number.isInteger(n) && n >= 1 && n <= 1_000_000
+
+  const give = (e) => {
+    e.preventDefault()
+    if (ok) send('admin_give_coins', { username, amount: n })
+  }
+
+  return (
+    <form className="lb-admin" onSubmit={give}>
+      <h3>Admin</h3>
+      <label className="lb-field">
+        <span>Player</span>
+        <input value={who} onChange={(e) => setWho(e.target.value)} placeholder="@username" autoCapitalize="none" autoComplete="off" spellCheck={false} />
+      </label>
+      <label className="lb-field">
+        <span>Coins</span>
+        <input type="number" inputMode="numeric" min="1" max="1000000" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </label>
+      <button className="lb-btn go" disabled={!ok}>
+        Give coins
+      </button>
+    </form>
   )
 }
 

@@ -33,6 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import AsyncMongoClient
 
 from core import catalog
+from core.limits import Limiter
 from core.accounts import AccountError, Accounts
 from core.channel_manager import RoomManager
 from core.member import Player
@@ -52,6 +53,8 @@ storage: Optional[Storage] = None
 manager = ConnectionManager()
 room_manager = RoomManager()
 accounts = Accounts()
+# ADMINS="@gamith,@someone" (env, comma-separated; the @ is optional): who may give coins.
+accounts.admins = {"@" + u.strip().lstrip("@").lower() for u in os.environ.get("ADMINS", "").split(",") if u.strip()}
 parties = Parties()
 
 TURN_SECONDS = 30
@@ -66,7 +69,13 @@ _turn_timers: Dict[str, asyncio.Task] = {}
 _grace_tasks: Dict[str, asyncio.Task] = {}
 _gchat: deque = deque(maxlen=CHAT_KEEP)
 _last_chat: Dict[str, float] = {}
-_auth_tries: Dict[int, deque] = {}
+
+# Rate limits (in memory, per server process).
+messages_per_socket = Limiter(150, 10)    # any message: 15 a second on average, with room for bursts
+slow_down_notes = Limiter(1, 10)          # tell a flooding socket at most once per 10 s
+auth_per_socket = Limiter(AUTH_MAX_TRIES, AUTH_WINDOW_S)
+failed_signins = Limiter(5, 600)          # wrong passwords per username, then locked for the rest of the 10 min
+signups_per_address = Limiter(10, 3600)   # new accounts per network address per hour
 _ws_token: Dict[int, str] = {}
 
 
@@ -218,6 +227,10 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 async def _dispatch(ws: WebSocket, msg: dict) -> None:
+    if not messages_per_socket.hit(id(ws)):
+        if slow_down_notes.hit(id(ws)):
+            await _send(ws, "error", message="You're sending too fast. Slow down.")
+        return
     t = msg.get("type", "")
     if t in SIGNED_OUT_HANDLERS:
         return await _guarded(ws, SIGNED_OUT_HANDLERS[t], msg)
@@ -256,7 +269,8 @@ async def _to(aid: str, type_: str, **payload) -> None:
 
 
 async def _on_disconnect(ws: WebSocket) -> None:
-    _auth_tries.pop(id(ws), None)
+    for limit in (auth_per_socket, messages_per_socket, slow_down_notes):
+        limit.forget(id(ws))
     _ws_token.pop(id(ws), None)
     aid = await manager.disconnect(ws)
     if not aid:
@@ -291,23 +305,29 @@ async def _depart(aid: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _too_many_tries(ws: WebSocket) -> bool:
-    tries = _auth_tries.setdefault(id(ws), deque())
-    now = time.monotonic()
-    while tries and now - tries[0] > AUTH_WINDOW_S:
-        tries.popleft()
-    tries.append(now)
-    return len(tries) > AUTH_MAX_TRIES
+    return not auth_per_socket.hit(id(ws))
+
+
+def _address(ws: WebSocket) -> str:
+    # Behind Render's proxy the client is the first X-Forwarded-For entry. It can be forged,
+    # so this only slows casual abuse; the per-username sign-in lock doesn't depend on it.
+    fwd = ws.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (ws.client.host if ws.client else "?")
 
 
 async def _signup(ws: WebSocket, msg: dict) -> None:
     if _too_many_tries(ws):
         return await _send(ws, "auth_error", message="Too many attempts. Wait a minute and try again.")
+    address = _address(ws)
+    if signups_per_address.blocked(address):
+        return await _send(ws, "auth_error", message="Too many new accounts from your network. Try again later.")
     try:
         # ponytail: scrypt runs on the event loop (~50 ms); move to asyncio.to_thread if sign-ups pile up
         account, token = accounts.signup(msg.get("username"), msg.get("password"),
                                          msg.get("display_name"), msg.get("character"))
     except AccountError as exc:
         return await _send(ws, "auth_error", message=str(exc))
+    signups_per_address.hit(address)
     log.info("New account %s", account["username"])
     await _sign_in(ws, account, token)
 
@@ -315,10 +335,15 @@ async def _signup(ws: WebSocket, msg: dict) -> None:
 async def _signin(ws: WebSocket, msg: dict) -> None:
     if _too_many_tries(ws):
         return await _send(ws, "auth_error", message="Too many attempts. Wait a minute and try again.")
+    who = str(msg.get("username") or "").strip().lower().lstrip("@")
+    if failed_signins.blocked(who):
+        return await _send(ws, "auth_error", message="Too many wrong passwords for this account. Try again in 10 minutes.")
     try:
         account, token = accounts.signin(msg.get("username"), msg.get("password"))
     except AccountError as exc:
+        failed_signins.hit(who)
         return await _send(ws, "auth_error", message=str(exc))
+    failed_signins.forget(who)
     await _sign_in(ws, account, token)
 
 
@@ -332,7 +357,8 @@ async def _auth(ws: WebSocket, msg: dict) -> None:
 
 async def _sign_in(ws: WebSocket, account: dict, token: str) -> None:
     aid = account["id"]
-    _auth_tries.pop(id(ws), None)
+    for limit in (auth_per_socket, messages_per_socket, slow_down_notes):
+        limit.forget(id(ws))
     _ws_token[id(ws)] = token
     manager.register(ws, aid, None)
     _cancel_grace(aid)
@@ -372,6 +398,18 @@ async def _signout(ws: WebSocket, _msg: dict) -> None:
 
 async def _push_profile(aid: str) -> None:
     await _to(aid, "profile", profile=accounts.profile(aid))
+
+
+async def _admin_give_coins(ws: WebSocket, msg: dict) -> None:
+    aid = manager.get_player_id(ws)
+    if accounts.accounts[aid]["username"] not in accounts.admins:
+        raise AccountError("Only admins can give coins.")
+    amount = msg.get("amount")
+    target = accounts.give_coins(msg.get("username"), amount)
+    name = accounts.accounts[target]["username"]
+    log.info("Admin %s gave %s coins to %s", accounts.accounts[aid]["username"], amount, name)
+    await _push_profile(target)
+    await _send(ws, "notice", message=f"Gave {amount:,} coins to {name}.")
 
 
 async def _leaderboard(ws: WebSocket, msg: dict) -> None:
@@ -860,7 +898,7 @@ async def _broadcast_to_room(room_id: str, message: dict, exclude_player: Option
 SIGNED_OUT_HANDLERS = {"signup": _signup, "signin": _signin, "auth": _auth}
 
 HANDLERS = {
-    "signout": _signout, "update_profile": _update_profile, "leaderboard": _leaderboard, "equip": _equip, "buy": _buy,
+    "signout": _signout, "update_profile": _update_profile, "leaderboard": _leaderboard, "admin_give_coins": _admin_give_coins, "equip": _equip, "buy": _buy,
     "friend_request": _friend_request, "friend_accept": _friend_accept,
     "friend_decline": _friend_decline, "friend_remove": _friend_remove,
     "party_invite": _party_invite, "party_accept": _party_accept, "party_request": _party_request,

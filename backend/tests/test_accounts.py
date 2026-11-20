@@ -363,6 +363,32 @@ class TestLeaderboard:
             acc.leaderboard(a, "coins", "global")
 
 
+class TestAdmin:
+    def test_profile_says_who_is_an_admin(self, acc):
+        ana = new(acc, "@ana")[0]["id"]
+        bob = new(acc, "@bob")[0]["id"]
+        acc.admins = {"@ana"}
+        assert acc.profile(ana)["admin"] is True and acc.profile(bob)["admin"] is False
+
+    def test_give_coins_adds_to_the_named_player(self, acc):
+        ana = new(acc, "@ana")[0]["id"]
+        before = acc.profile(ana)["coins"]
+        acc.dirty_accounts.clear()
+        assert acc.give_coins("@ANA", 10000) == ana
+        assert acc.profile(ana)["coins"] == before + 10000
+        assert ana in acc.dirty_accounts                      # saved on the next flush
+
+    @pytest.mark.parametrize("amount", [0, -5, 1_000_001, 2.5, "10", True, None])
+    def test_give_coins_rejects_bad_amounts(self, acc, amount):
+        new(acc, "@ana")
+        with pytest.raises(AccountError):
+            acc.give_coins("@ana", amount)
+
+    def test_give_coins_needs_a_real_player(self, acc):
+        with pytest.raises(AccountError):
+            acc.give_coins("@nobody", 10)
+
+
 class TestPersistence:
     def test_dirty_tracking_and_reload(self, acc, clock):
         a, token = new(acc)

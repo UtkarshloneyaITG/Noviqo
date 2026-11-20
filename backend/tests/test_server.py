@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 import main
 import core.session
+from core.limits import Limiter
 from core.item import Card, CardType, Color
 
 _seq = itertools.count(1)
@@ -25,6 +26,9 @@ def client(monkeypatch):
     monkeypatch.setattr(main, "GRACE_SECONDS", 0.3)
     monkeypatch.setattr(main, "CHAT_GAP_S", 0)
     monkeypatch.setattr(core.session, "COUNTDOWN_S", 0)   # tests that need it set it back
+    # The suite makes hundreds of accounts from one address: rate-limit tests set their own limits.
+    for name in ("messages_per_socket", "failed_signins", "signups_per_address"):
+        monkeypatch.setattr(main, name, Limiter(10**6, 60))
     with TestClient(main.app) as c:
         yield c
 
@@ -310,6 +314,60 @@ def test_leaderboard_reply_includes_your_own_row(client):
         msg = recv(ws, "leaderboard")
         assert (msg["board"], msg["scope"], msg["me"]["id"]) == ("wins", "friends", aid)
         assert [r["id"] for r in msg["rows"]] == [aid]
+
+
+# ── admin ────────────────────────────────────────────────────────────────
+
+def test_admin_gives_coins_and_the_player_sees_them(client, monkeypatch):
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+        _, _, admin = signup(a)
+        _, _, player = signup(b)
+        drain(b)
+        monkeypatch.setattr(main.accounts, "admins", {admin})
+        a.send_json({"type": "admin_give_coins", "username": player, "amount": 10000})
+        assert any(m["type"] == "notice" and "10,000" in m["message"] for m in drain(a))
+        assert [m for m in drain(b) if m["type"] == "profile"][-1]["profile"]["coins"] == 10200
+
+
+def test_only_admins_can_give_coins(client):
+    with client.websocket_connect("/ws") as a:
+        _, _, me = signup(a)
+        a.send_json({"type": "admin_give_coins", "username": me, "amount": 5})
+        assert "admin" in recv(a, "error")["message"].lower()
+
+
+# ── rate limits ──────────────────────────────────────────────────────────
+
+def test_wrong_passwords_lock_the_username_on_any_connection(client, monkeypatch):
+    monkeypatch.setattr(main, "failed_signins", Limiter(3, 600))
+    with client.websocket_connect("/ws") as ws:
+        _, _, name = signup(ws)
+    for _ in range(3):
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"type": "signin", "username": name, "password": "wrong-pass"})
+            recv(ws, "auth_error")
+    with client.websocket_connect("/ws") as ws:          # even the right password waits now
+        ws.send_json({"type": "signin", "username": name, "password": "password1"})
+        assert "too many" in recv(ws, "auth_error")["message"].lower()
+
+
+def test_new_accounts_per_address_are_limited(client, monkeypatch):
+    monkeypatch.setattr(main, "signups_per_address", Limiter(2, 3600))
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b,             client.websocket_connect("/ws") as c:
+        signup(a)
+        signup(b)
+        c.send_json({"type": "signup", "username": f"@t_extra{next(_seq)}", "password": "password1",
+                     "character": "char:m-Casual"})
+        assert "too many" in recv(c, "auth_error")["message"].lower()
+
+
+def test_flooding_one_connection_is_slowed_down(client, monkeypatch):
+    monkeypatch.setattr(main, "messages_per_socket", Limiter(5, 60))
+    with client.websocket_connect("/ws") as ws:
+        signup(ws)
+        for _ in range(6):
+            ws.send_json({"type": "leaderboard", "board": "rp", "scope": "friends"})
+        assert "slow down" in recv(ws, "error")["message"].lower()
 
 
 # ── chat ─────────────────────────────────────────────────────────────────
