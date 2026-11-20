@@ -11,6 +11,7 @@ import copy
 import hashlib
 import hmac
 import os
+import random
 import re
 import secrets
 import time
@@ -201,13 +202,17 @@ class Accounts:
 
     def leaderboard(self, me: str, board, scope, limit: int = 50) -> dict:
         """Top `limit` by ranked points or wins (ties: the other stat, then username).
-        Global leaves out accounts that never played; friends is you + your friends.
+        Global leaves out accounts that never played; friends is you + your friends;
+        server is every account, first to last, with no limit (the Ranks page).
         `me` is always your own row (place None if you're not on the board)."""
-        if board not in self.BOARDS or scope not in ("global", "friends"):
+        if board not in self.BOARDS or scope not in ("global", "friends", "server"):
             raise AccountError("Unknown leaderboard.")
         main, tie = self.BOARDS[board], self.BOARDS["wins" if board == "rp" else "rp"]
         if scope == "friends":
             ids = [me, *self.accounts[me]["friends"]]
+        elif scope == "server":
+            # ponytail: sends every account in one reply; page it once there are thousands of players
+            ids, limit = list(self.accounts), None
         else:
             ids = [i for i, d in self.accounts.items() if d["stats"]["games"] > 0]
         # ponytail: sorts every account per request; keep a sorted index once there are tens of thousands
@@ -256,6 +261,33 @@ class Accounts:
         self._touch(aid)
 
     # ── friends ──────────────────────────────────────────────────────────
+    SEARCH_MAX = 10
+
+    def search(self, me: str, query, online: Callable[[str], bool] = lambda _aid: False) -> Tuple[str, List[str]]:
+        """Players to befriend, never yourself; returns (the query as used, up to SEARCH_MAX ids).
+        Typed text matches @usernames and display names: exact, then starts-with, then contains.
+        An empty box gets a random handful you aren't friends with yet, online players first."""
+        q = str(query or "").strip().removeprefix("@").lower()[:20]
+        others = [aid for aid in self.accounts if aid != me]
+        if not q:
+            friends = set(self.accounts[me]["friends"])
+            pool = [aid for aid in others if aid not in friends]
+            random.shuffle(pool)
+            pool.sort(key=lambda aid: not online(aid))     # stable: still random within each group
+            return q, pool[:self.SEARCH_MAX]
+
+        def score(aid):
+            d = self.accounts[aid]
+            names = (d["username"][1:], d["display_name"].lower())
+            for s, test in ((0, str.__eq__), (1, str.startswith), (2, str.__contains__)):
+                if any(test(n, q) for n in names):
+                    return s
+            return None
+
+        # ponytail: scans every account per search; add a name index once there are tens of thousands
+        hits = sorted((s, self.accounts[aid]["username"], aid) for aid in others if (s := score(aid)) is not None)
+        return q, [aid for _, _, aid in hits[:self.SEARCH_MAX]]
+
     def are_friends(self, a: str, b: str) -> bool:
         return b in self.accounts.get(a, {}).get("friends", [])
 

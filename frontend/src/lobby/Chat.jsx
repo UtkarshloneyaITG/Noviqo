@@ -37,7 +37,8 @@ export default function Chat() {
   }
 
   return (
-    <section className="lb-panel lb-chat" aria-label="Chat">
+    // Esc leaves the chat, which shrinks it back (it's expanded while focused, see lobby.css)
+    <section className="lb-panel lb-chat" aria-label="Chat" onKeyDown={(e) => e.key === 'Escape' && document.activeElement?.blur()}>
       <div className="lb-tabs" role="tablist" aria-label="Chat channel">
         {CHANNELS.map(([id, label]) => (
           <button

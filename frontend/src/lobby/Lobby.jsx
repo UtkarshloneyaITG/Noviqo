@@ -6,12 +6,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
 import { LOBBY_EMOTES } from '../three/world/lobbyMotion'
-import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, rankColor, useItemMap } from './ui'
+import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, RolesLogo, SecondsLeft, rankColor, useItemMap } from './ui'
 import SignIn from './SignIn'
 import Chat from './Chat'
-import { FriendsStrip, FriendsPanel, InvitePicker } from './Friends'
-import { Inventory, Shop, Milestones, Ranks, Settings, GamePicker } from './Panels'
-import Leaderboard from './Leaderboard'
+import { FriendsStrip, FriendsPanel, AddFriend } from './Friends'
+import { Inventory, Shop, Milestones, Settings, GamePicker } from './Panels'
+import Ranks from './Ranks'
+import News from './News'
 import '../styles/lobby.css'
 
 const PANELS = {
@@ -19,10 +20,9 @@ const PANELS = {
   shop: Shop,
   milestones: Milestones,
   ranks: Ranks,
-  leaderboard: Leaderboard,
   settings: Settings,
   friends: FriendsPanel,
-  invite: InvitePicker,
+  addfriend: AddFriend,
   games: GamePicker,
 }
 
@@ -74,6 +74,7 @@ function Hub() {
       <Chat />
       <Dock />
       {Panel && <Panel onClose={closePanel} />}
+      <News />
     </>
   )
 }
@@ -147,6 +148,8 @@ function PlayColumn() {
   const me = members.find((m) => m.id === myId)
   const others = members.slice(1)
   const notReady = others.filter((m) => !m.ready).length
+  const roles = party?.game === 'roles' // Raja Mantri Chor Sipahi: 1–4 people, bots fill the other seats
+  const bots = 4 - members.length
 
   let start
   if (!party) {
@@ -156,9 +159,11 @@ function PlayColumn() {
       </button>
     )
   } else if (iLead) {
-    const status = members.length < 2 ? 'Invite a friend' : notReady ? `${notReady} not ready` : 'Everyone ready'
+    const status = roles
+      ? members.length > 4 ? 'Seats 4 at most' : notReady ? `${notReady} not ready` : bots ? `${bots} bot${bots > 1 ? 's' : ''} fill in` : 'Everyone ready'
+      : members.length < 2 ? 'Invite a friend' : notReady ? `${notReady} not ready` : 'Everyone ready'
     start = (
-      <button className="lb-start" disabled={members.length < 2 || notReady > 0} onClick={() => send('party_start')}>
+      <button className="lb-start" disabled={(roles ? members.length > 4 : members.length < 2) || notReady > 0} onClick={() => send('party_start')}>
         Start
         <small>
           Party of {members.length}
@@ -189,15 +194,19 @@ function PlayColumn() {
         <div className="lb-panel lb-mode">
           <div className="mrow">
             <div className="glogo">
-              <GameLogo />
+              {roles ? <RolesLogo /> : <GameLogo />}
             </div>
-            <div className="gname">UNO</div>
+            <div className={`gname ${roles ? 'gname--long' : ''}`}>{roles ? 'Raja Mantri Chor Sipahi' : 'UNO'}</div>
             {iLead && (
               <button className="chg" onClick={() => openPanel('games')}>
                 Change game
               </button>
             )}
           </div>
+          {roles ? (
+            <p className="lb-roles-note">4 seats · 10 rounds · bots fill empty seats</p>
+          ) : (
+            <>
           <div className="lb-seg" role="radiogroup" aria-label="Mode">
             {['casual', 'ranked'].map((m) => (
               <button
@@ -242,9 +251,13 @@ function PlayColumn() {
               <i />
             </button>
           </div>
+            </>
+          )}
           <div className="pstat">
             <span>
-              {party.mode === 'ranked' ? (
+              {roles ? (
+                'Casual: coins by final place'
+              ) : party.mode === 'ranked' ? (
                 nextLabel ? (
                   <>
                     Wins here count toward <b>{nextLabel}</b>
@@ -280,6 +293,16 @@ function EventBanner() {
   const [slide, setSlide] = useState(0)
 
   const slides = [
+    {
+      panel: 'games', // opens Change game, where the new game is listed
+      title: 'New game is arriving',
+      text: 'Play now.',
+      art: (
+        <div className="emb">
+          <RolesLogo size={84} />
+        </div>
+      ),
+    },
     {
       panel: 'ranks',
       title: rank.next_label ? `Climb to ${rank.next_label}` : `${rank.label} tier`,
@@ -341,7 +364,6 @@ const DOCK = [
   ['shop', 'Shop', 'shop'],
   ['milestones', 'Milestones', 'medal'],
   ['ranks', 'Ranks', 'bars'],
-  ['leaderboard', 'Leaders', 'trophy'],
 ]
 
 function Dock() {
@@ -454,7 +476,9 @@ function Toasts() {
           <Avatar character={invite.from.character} />
           <p>
             <b>{invite.from.display_name}</b> invited you to their party
-            <span>Party of {invite.size}</span>
+            <span>
+              Party of {invite.size} · <SecondsLeft until={invite.expires_at} />s left
+            </span>
           </p>
           <button className="lb-btn go" onClick={() => acceptInvite(invite.party_id)}>
             Join party

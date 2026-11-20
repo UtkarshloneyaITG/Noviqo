@@ -81,7 +81,7 @@ class TestSignup:
         assert p["username"] == "@alex" and p["display_name"] == "Alex"
         assert p["coins"] == 200
         assert p["equipped"] == {"character": "char:m-Casual", "card_back": "back:classic", "felt": "felt:green",
-                                 "lobby": "lobby:rooftop"}
+                                 "lobby": "lobby:rooftop", "entry": "entry:classic"}
         assert "char:w-Worker" in p["inventory"] and "emotes:basic" in p["inventory"]
         assert acc.auth(token)["id"] == a["id"]
 
@@ -389,6 +389,32 @@ class TestAdmin:
             acc.give_coins("@nobody", 10)
 
 
+class TestEntrances:
+    def test_new_players_start_with_the_classic_entrance(self, acc):
+        p = new(acc, "@ana")[0]
+        assert p["equipped"]["entry"] == "entry:classic" and "entry:classic" in p["inventory"]
+
+    def test_ten_entrances_are_for_sale(self):
+        assert len([i for i in catalog.ITEMS if i["kind"] == "entry" and i["price"]]) == 10
+
+    def test_buy_and_equip_an_entrance(self, acc):
+        aid = new(acc, "@ana")[0]["id"]
+        acc.accounts[aid]["coins"] = 5000
+        acc.buy(aid, "entry:skydrop")
+        acc.equip(aid, "entry:skydrop")
+        assert acc.profile(aid)["equipped"]["entry"] == "entry:skydrop"
+
+    def test_accounts_saved_before_entrances_get_one(self, acc, clock):
+        aid = new(acc, "@ana")[0]["id"]
+        doc = acc.account_doc(aid)
+        doc["inventory"].remove("entry:classic")
+        del doc["equipped"]["entry"]
+        fresh = Accounts(now_ms=clock)
+        fresh.load([doc], [])
+        assert fresh.profile(aid)["equipped"]["entry"] == "entry:classic"
+        assert "entry:classic" in fresh.profile(aid)["inventory"] and aid in fresh.dirty_accounts
+
+
 class TestPersistence:
     def test_dirty_tracking_and_reload(self, acc, clock):
         a, token = new(acc)
@@ -399,3 +425,39 @@ class TestPersistence:
         fresh.load(docs, sessions)
         assert fresh.auth(token)["id"] == a["id"]
         fresh.signin("@alex", "hunter222")
+
+
+def uid(acc, name, **kw):
+    return new(acc, name, **kw)[0]["id"]
+
+
+class TestSearch:
+    def test_ranks_exact_then_prefix_then_contains(self, acc):
+        me = uid(acc, "@meme")
+        for u in ("@endgame", "@gamith", "@game", "@gamer", "@other"):
+            uid(acc, u)
+        names = lambda q: [acc.accounts[i]["username"] for i in acc.search(me, q)[1]]
+        assert acc.search(me, "  @GAME ")[0] == "game"
+        assert names("  @GAME ") == ["@game", "@gamer", "@endgame"]
+        assert names("ga") == ["@game", "@gamer", "@gamith", "@endgame"]
+
+    def test_matches_display_names_and_never_you(self, acc):
+        me = uid(acc, "@gamer_me")
+        bo = uid(acc, "@bobby", display_name="Game Master")
+        assert acc.search(me, "game")[1] == [bo]
+
+    def test_caps_results_and_query_length(self, acc):
+        me = uid(acc, "@meme")
+        for n in range(15):
+            uid(acc, f"@player{n:02d}")
+        q, ids = acc.search(me, "player" + "x" * 50)
+        assert len(q) == 20 and ids == []
+        assert len(acc.search(me, "player")[1]) == acc.SEARCH_MAX
+
+    def test_empty_box_suggests_strangers_online_first(self, acc):
+        me = uid(acc, "@meme")
+        friend, on, off = uid(acc, "@palpal"), uid(acc, "@onliner"), uid(acc, "@offline")
+        acc.friend_request(me, "@palpal")
+        acc.friend_accept(friend, me)
+        q, ids = acc.search(me, "", online=lambda aid: aid == on)
+        assert (q, ids) == ("", [on, off])

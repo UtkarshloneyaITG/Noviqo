@@ -5,10 +5,13 @@ chat, shop, game actions) is documented for the client team; in short:
 
   signed-out:  signup, signin, auth                → auth_ok | auth_error
   account:     signout, update_profile, equip, buy → profile, catalog
-  friends:     friend_request / _accept / _decline / _remove → friends
+  friends:     friend_request / _accept / _decline / _remove → friends;
+               user_search {q}                     → user_results (Add friend page)
   party:       party_invite / _accept / _request / _admit / _deny / _leave /
                _kick / _ready / _set / _start      → party, party_invite, party_request
   lobby:       emote (your character acts it out)  → emote, to the whole party
+  roles:       roles_pick {slot}, roles_aim {target}, roles_guess {target}, roles_leave
+                                                   → roles_state (personal), roles_left
   chat:        gchat (everyone), pchat (party)     → gchat, gchat_history, pchat
   game:        play_card, draw_card, pass_turn, call_uno, catch_uno,
                challenge_wild4, chat, leave_room, rematch, kick_player
@@ -21,6 +24,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import time
 import uuid
 from collections import deque
@@ -37,7 +41,8 @@ from core.limits import Limiter
 from core.accounts import AccountError, Accounts
 from core.channel_manager import RoomManager
 from core.member import Player
-from core.parties import PartyError, Parties
+from core.parties import INVITE_TTL_S, PartyError, Parties
+from core.roles import RolesError, RolesMatch, Seat as RoleSeat
 from storage import Storage
 from websocket.connection_manager import ConnectionManager
 
@@ -76,6 +81,7 @@ slow_down_notes = Limiter(1, 10)          # tell a flooding socket at most once 
 auth_per_socket = Limiter(AUTH_MAX_TRIES, AUTH_WINDOW_S)
 failed_signins = Limiter(5, 600)          # wrong passwords per username, then locked for the rest of the 10 min
 signups_per_address = Limiter(10, 3600)   # new accounts per network address per hour
+searches_per_account = Limiter(20, 10)    # Add friend lookups (the client debounces typing)
 _ws_token: Dict[int, str] = {}
 
 
@@ -196,6 +202,7 @@ async def _expire_after_grace(aid: str) -> None:
     del _grace_tasks[aid]
     log.info("Account %s did not come back — removing", aid)
     await _depart(aid)
+    await _leave_roles(aid)
     await _leave_party_for_good(aid)
     if aid in accounts.accounts:
         accounts.mark_seen(aid)
@@ -248,7 +255,7 @@ async def _dispatch(ws: WebSocket, msg: dict) -> None:
 async def _guarded(ws: WebSocket, handler, msg: dict) -> None:
     try:
         await handler(ws, msg)
-    except (AccountError, PartyError) as exc:
+    except (AccountError, PartyError, RolesError) as exc:
         await _send(ws, "error", message=str(exc))
     except Exception as exc:
         log.exception("Handler error for type=%s: %s", msg.get("type"), exc)
@@ -275,6 +282,10 @@ async def _on_disconnect(ws: WebSocket) -> None:
     aid = await manager.disconnect(ws)
     if not aid:
         return
+    match = _roles_of(aid)
+    if match:
+        match.set_connected(aid, False)
+        await _push_roles(match)
     # Don't drop them yet — a refresh or network blip signs back in within
     # seconds and _sign_in cancels this.
     _cancel_grace(aid)
@@ -375,6 +386,11 @@ async def _sign_in(ws: WebSocket, account: dict, token: str) -> None:
         await _broadcast_to_room(game.room_id, {"type": "player_reconnected", "player_name": game._find_player(aid).name},
                                  exclude_player=aid)
 
+    match = _roles_of(aid)                    # back at a Raja Mantri Chor Sipahi table
+    if match:
+        match.set_connected(aid, True)
+        await _push_roles(match)
+
     await _push_friends(aid)
     await _push_party(parties.ensure(aid))
     await _send(ws, "gchat_history", messages=list(_gchat))
@@ -385,6 +401,7 @@ async def _signout(ws: WebSocket, _msg: dict) -> None:
     aid = manager.get_player_id(ws)
     accounts.signout(_ws_token.pop(id(ws), None))
     await _depart(aid)
+    await _leave_roles(aid)
     await _leave_party_for_good(aid)
     manager.unbind_player(aid)
     accounts.mark_seen(aid)
@@ -448,6 +465,9 @@ async def _buy(ws: WebSocket, msg: dict) -> None:
 def _status(aid: str) -> str:
     if not manager.get_ws(aid):
         return "offline"
+    match = _roles_of(aid)
+    if match and not match.finished:
+        return "in_game"
     game = room_manager.get_room_for_player(aid)
     return "in_game" if game and game.status.value == "playing" else "online"
 
@@ -507,15 +527,26 @@ async def _friend_remove(ws, msg):
     await _friend_change(ws, msg, accounts.friend_remove)
 
 
+async def _user_search(ws: WebSocket, msg: dict) -> None:
+    """Add friend page: players matching the typed name, or a random handful for an empty box."""
+    aid = manager.get_player_id(ws)
+    if not searches_per_account.hit(aid):
+        raise AccountError("You're searching too fast. Try again in a moment.")
+    q, ids = accounts.search(aid, msg.get("q"), online=lambda other: manager.get_ws(other) is not None)
+    users = [{**accounts.person(i), "status": _status(i), "rank_label": accounts.rank_label(i)} for i in ids]
+    await _send(ws, "user_results", q=q, users=users)
+
+
 # ---------------------------------------------------------------------------
 # Party
 # ---------------------------------------------------------------------------
 
 def _party_view(p) -> dict:
     return {
-        "id": p.id, "leader_id": p.leader_id, "game": "uno", "mode": p.mode,
+        "id": p.id, "leader_id": p.leader_id, "game": p.game, "mode": p.mode,
         "turn_seconds": p.turn_seconds, "stack_draw_cards": p.stack_draw_cards, "max": 5,
-        "members": [{**accounts.person(m), "ready": m in p.ready or m == p.leader_id,
+        "members": [{**accounts.person(m), "entry": accounts.accounts[m]["equipped"].get("entry"),
+                     "ready": m in p.ready or m == p.leader_id,
                      "rank_label": accounts.rank_label(m)} for m in p.members if m in accounts.accounts],
     }
 
@@ -549,7 +580,7 @@ async def _party_invite(ws: WebSocket, msg: dict) -> None:
     party_id = parties.invite(aid, other)
     # built by hand: `from` is a Python keyword, so it can't go through _to(**payload)
     await manager.send_to_player({"type": "party_invite", "party_id": party_id, "from": accounts.person(aid),
-                                  "size": len(parties.of(aid).members)}, other)
+                                  "size": len(parties.of(aid).members), "expires_in": INVITE_TTL_S}, other)
     await _send(ws, "notice", message=f"Invite sent to {accounts.accounts[other]['display_name']}.")
 
 
@@ -607,7 +638,7 @@ async def _party_ready(ws: WebSocket, msg: dict) -> None:
 
 
 async def _party_set(ws: WebSocket, msg: dict) -> None:
-    settings = {k: msg[k] for k in ("mode", "turn_seconds", "stack_draw_cards") if k in msg}
+    settings = {k: msg[k] for k in ("game", "mode", "turn_seconds", "stack_draw_cards") if k in msg}
     await _push_party(parties.configure(manager.get_player_id(ws), settings))
 
 
@@ -619,11 +650,17 @@ async def _party_start(ws: WebSocket, _msg: dict) -> None:
         if not manager.get_ws(m):
             raise PartyError(f"{name} is offline.")
         seated = room_manager.get_room_for_player(m)
-        if seated and seated.status.value == "playing":
+        match = _roles_of(m)
+        if (seated and seated.status.value == "playing") or (match and not match.finished):
             raise PartyError(f"{name} is still in a game.")
     for m in p.members:                       # leave any finished table first
         if room_manager.get_room_for_player(m):
             await _depart(m)
+        if _roles_of(m):
+            await _leave_roles(m)
+            await _to(m, "roles_left")
+    if p.game == "roles":
+        return await _start_roles(p)
 
     room_id = room_manager.create_room()
     game = room_manager.get_room(room_id)
@@ -762,6 +799,14 @@ async def _challenge_wild4(ws, _msg):
 
 async def _chat(ws: WebSocket, msg: dict) -> None:
     """A chat line / emoji bubble over your seat, for everyone at the table."""
+    match = _roles_of(manager.get_player_id(ws))
+    if match:
+        aid = manager.get_player_id(ws)
+        text = (msg.get("text") or "").strip()[:120]
+        if text:
+            await manager.broadcast_common({"type": "chat", "player_id": aid, "player_name": match.seat(aid).name,
+                                            "text": text}, _roles_people(match))
+        return
     aid, game = _game_for(ws)
     text = (msg.get("text") or "").strip()[:120]
     if text:
@@ -782,12 +827,17 @@ def _angle(value, limit: float) -> float:
 
 async def _look(ws: WebSocket, msg: dict) -> None:
     """Where a player's camera points; the others turn that player's head to match."""
-    aid, game = _game_for(ws)
+    aid = manager.get_player_id(ws)
+    match = _roles_of(aid)
+    game = None if match else _game_for(ws)[1]
     yaw, pitch = _angle(msg.get("yaw"), 1.0), _angle(msg.get("pitch"), 0.6)
     now = time.monotonic()
     if now - _last_look.get(aid, -1.0) < LOOK_GAP_S:
         return                      # client throttles too; this just caps a flood
     _last_look[aid] = now
+    if match:
+        return await manager.broadcast_common({"type": "look", "id": aid, "yaw": yaw, "pitch": pitch},
+                                              _roles_people(match, exclude=aid))
     await _broadcast_to_room(game.room_id, {"type": "look", "id": aid, "yaw": yaw, "pitch": pitch}, exclude_player=aid)
 
 
@@ -873,7 +923,7 @@ async def _broadcast_game_state(room_id: str, reset_timer: bool = True) -> None:
         paid = _apply_rewards(game)
     if reset_timer or room_id not in _turn_timers:
         _schedule_turn_timer(room_id)
-    messages = {p.id: {"type": "game_state", "state": game.get_state_for_player(p.id)} for p in game.players}
+    messages = {pid: {"type": "game_state", "state": game.get_state_for_player(pid)} for pid in _seated(game)}
     await manager.broadcast_room(messages)
     if paid:
         for pid, reward in paid.items():
@@ -888,7 +938,143 @@ async def _broadcast_to_room(room_id: str, message: dict, exclude_player: Option
     game = room_manager.get_room(room_id)
     if not game:
         return
-    await manager.broadcast_common(message, [p.id for p in game.players if p.id != exclude_player])
+    await manager.broadcast_common(message, [pid for pid in _seated(game) if pid != exclude_player])
+
+
+def _seated(game) -> list:
+    """Players still at this table. Someone who left stays in game.players (offline, so their
+    turns auto-play and payouts work) but must get no more of its messages, or a finished
+    table pops back up in their lobby."""
+    return [p.id for p in game.players if room_manager.get_room_for_player(p.id) is game]
+
+
+# ---------------------------------------------------------------------------
+# Raja Mantri Chor Sipahi (core/roles.py): four seats, bots fill the empty ones
+# ---------------------------------------------------------------------------
+
+ROLES_TICK_S = 0.2           # each match's clock: bots act and reveals move on at this resolution
+BOT_NAMES = ["Asha", "Vikram", "Meera", "Arjun", "Kabir", "Isha", "Rohan", "Tara", "Dev", "Nisha"]
+BOT_CHARACTERS = [i["id"] for i in catalog.ITEMS if i["kind"] == "character"]
+role_matches: Dict[str, RolesMatch] = {}
+role_seat: Dict[str, str] = {}               # account id -> the match they're seated at
+_role_tasks: Dict[str, asyncio.Task] = {}
+
+
+def _roles_of(aid: Optional[str]) -> Optional[RolesMatch]:
+    mid = role_seat.get(aid) if aid else None
+    return role_matches.get(mid) if mid else None
+
+
+def _roles_people(match: RolesMatch, exclude: Optional[str] = None) -> list:
+    """Humans still at this table; someone who left gets none of its messages."""
+    return [s.id for s in match.seats if not s.bot and role_seat.get(s.id) == match.id and s.id != exclude]
+
+
+async def _push_roles(match: RolesMatch) -> None:
+    for aid in _roles_people(match):
+        await _to(aid, "roles_state", state=match.state_for(aid))
+
+
+async def _start_roles(p) -> None:
+    seats = [RoleSeat(id=m, name=accounts.accounts[m]["display_name"],
+                      character=accounts.accounts[m]["equipped"]["character"]) for m in p.members]
+    seats += [RoleSeat(id=f"bot-{uuid.uuid4().hex[:8]}", name=name, character=random.choice(BOT_CHARACTERS), bot=True)
+              for name in random.sample(BOT_NAMES, 4 - len(seats))]
+    random.shuffle(seats)                    # who sits where around the table
+    # ponytail: matches live in memory only; a server restart mid-match ends it
+    match = RolesMatch(seats)
+    role_matches[match.id] = match
+    for m in p.members:
+        role_seat[m] = match.id
+    p.ready.clear()
+    log.info("Roles match %s started for party %s (%d bots)", match.id, p.id, 4 - len(p.members))
+    _role_tasks[match.id] = asyncio.create_task(_drive_roles(match))
+    await _push_roles(match)
+    await _push_party(p)
+    for m in p.members:
+        await _presence_changed(m)
+
+
+def _pay_roles(match: RolesMatch) -> None:
+    """Coins and stats for the humans, once, by final place (casual: no rank points)."""
+    place = {r["id"]: r["place"] for r in match.standings()}
+    for s in match.seats:
+        if not s.bot and s.id in accounts.accounts:
+            match.rewards[s.id] = accounts.record_game(s.id, place[s.id], len(match.seats), False, s.left)
+
+
+async def _drive_roles(match: RolesMatch) -> None:
+    """The match's clock: lets it tick, pushes every change, pays out once at the end."""
+    try:
+        while not match.finished:
+            await asyncio.sleep(ROLES_TICK_S)
+            if not match.tick():
+                continue
+            if match.finished:
+                _pay_roles(match)
+            await _push_roles(match)
+        for aid in _roles_people(match):
+            await _to(aid, "game_rewards", rewards=match.rewards.get(aid))
+            await _push_profile(aid)
+            await _presence_changed(aid)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _role_tasks.pop(match.id, None)
+
+
+async def _leave_roles(aid: str) -> None:
+    """Off the table: mid-match their seat plays itself; the last human out closes it."""
+    match = _roles_of(aid)
+    if not match:
+        return
+    del role_seat[aid]
+    if not match.finished:
+        match.leave(aid)
+    if _roles_people(match):
+        await _push_roles(match)
+        return
+    task = _role_tasks.pop(match.id, None)
+    if task:
+        task.cancel()
+    role_matches.pop(match.id, None)
+
+
+def _roles_for(ws: WebSocket):
+    aid = manager.get_player_id(ws)
+    match = _roles_of(aid)
+    if not match:
+        raise RolesError("You're not at a Raja Mantri Chor Sipahi table.")
+    return aid, match
+
+
+async def _roles_pick(ws: WebSocket, msg: dict) -> None:
+    """Take one of the four rolled chits."""
+    aid, match = _roles_for(ws)
+    match.pick(aid, msg.get("slot"))
+    await _push_roles(match)
+
+
+async def _roles_aim(ws: WebSocket, msg: dict) -> None:
+    """The Mantri swings the blaster toward a suspect (or lowers it); everyone sees it."""
+    aid, match = _roles_for(ws)
+    if match.set_aim(aid, msg.get("target")):
+        await _push_roles(match)
+
+
+async def _roles_guess(ws: WebSocket, msg: dict) -> None:
+    """The Mantri fires: names the Chor."""
+    aid, match = _roles_for(ws)
+    match.guess(aid, msg.get("target"))
+    await _push_roles(match)
+
+
+async def _roles_leave(ws: WebSocket, _msg: dict) -> None:
+    aid = manager.get_player_id(ws)
+    await _leave_roles(aid)
+    await _send(ws, "roles_left")
+    await _push_party(parties.of(aid))
+    await _presence_changed(aid)
 
 
 # ---------------------------------------------------------------------------
@@ -900,7 +1086,7 @@ SIGNED_OUT_HANDLERS = {"signup": _signup, "signin": _signin, "auth": _auth}
 HANDLERS = {
     "signout": _signout, "update_profile": _update_profile, "leaderboard": _leaderboard, "admin_give_coins": _admin_give_coins, "equip": _equip, "buy": _buy,
     "friend_request": _friend_request, "friend_accept": _friend_accept,
-    "friend_decline": _friend_decline, "friend_remove": _friend_remove,
+    "friend_decline": _friend_decline, "friend_remove": _friend_remove, "user_search": _user_search,
     "party_invite": _party_invite, "party_accept": _party_accept, "party_request": _party_request,
     "party_admit": _party_admit, "party_deny": _party_deny, "party_leave": _party_leave,
     "party_kick": _party_kick, "party_ready": _party_ready, "party_set": _party_set,
@@ -908,5 +1094,6 @@ HANDLERS = {
     "gchat": _gchat_send, "pchat": _pchat_send, "emote": _emote,
     "play_card": _play_card, "draw_card": _draw_card, "pass_turn": _pass_turn,
     "call_uno": _call_uno, "catch_uno": _catch_uno, "challenge_wild4": _challenge_wild4,
+    "roles_pick": _roles_pick, "roles_aim": _roles_aim, "roles_guess": _roles_guess, "roles_leave": _roles_leave,
     "chat": _chat, "look": _look, "leave_room": _leave_room, "rematch": _rematch, "kick_player": _kick_player,
 }

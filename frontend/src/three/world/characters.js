@@ -68,19 +68,32 @@ export function poseStanding(root) {
     if (!up || !lo || !hand) continue
     const side = sideOf(b, s)
     aim(up, lo, new THREE.Vector3(side * 0.2, -1, 0.06))
-    aim(lo, hand, new THREE.Vector3(side * 0.04, -1, 0.42)) // soft elbow
-    curlFingers(hand, side)
+    aim(lo, hand, new THREE.Vector3(side * 0.04, -1, 0.22)) // soft elbow, hand beside the thigh
+    relaxHand(hand)
   }
   return b
 }
 
-/** Fingers softly curled toward the palm (the T-pose has them flat). With the
- *  arm hanging, the palm faces the thigh, so each joint turns about the
- *  forward axis, toward the body. Call while the model is unrotated. */
-function curlFingers(hand, side) {
-  hand.traverse((o) => {
-    if (o.isBone && o !== hand) turnBone(o, Z, -side * (/^thumb/i.test(o.name) ? 0.1 : 0.2))
-  })
+// Flex per joint, knuckle → tip (radians): each finger a little more curled than the last.
+const CURL = { index: [0.25, 0.4, 0.3], middle: [0.3, 0.5, 0.35], ring: [0.35, 0.55, 0.35], pinky: [0.4, 0.6, 0.35], thumb: [0.15, 0.25] }
+
+/** The T-pose hand is flat with the fingers fanned out. Draw them together and
+ *  curl them softly. The rigs flex a finger about its bones' own X axis and
+ *  fan it about Z, so this is all bone-local: it holds however the arm points. */
+function relaxHand(hand) {
+  const roots = hand.children.filter((o) => o.isBone)
+  const middle = roots.find((o) => /^middle/i.test(o.name))?.quaternion.clone()
+  for (const root of roots) {
+    const curl = CURL[root.name.match(/^[a-z]+/i)?.[0].toLowerCase()]
+    if (!curl) continue
+    if (middle) root.quaternion.slerp(middle, /^thumb/i.test(root.name) ? 0.4 : 0.75) // close the fan; the thumb only partly
+    let bone = root
+    for (const a of curl) {
+      bone.rotateX(-a) // −X curls toward the palm on these rigs
+      bone = bone.children.find((o) => o.isBone && !/_end$/i.test(o.name))
+      if (!bone) break
+    }
+  }
 }
 
 /** Seated at a table: thighs forward, shins down, forearms forward holding cards.

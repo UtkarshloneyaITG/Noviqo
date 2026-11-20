@@ -14,9 +14,11 @@ import { ToneMappingMode } from 'postprocessing'
 import { useAppStore } from '../store/appStore'
 import TableWorld from './TableWorld'
 import LobbyWorld from './lobby/LobbyWorld'
+import RolesWorld from './roles/RolesWorld'
 
 function Experience() {
   const inGame = useAppStore((s) => s.gameState?.status === 'playing' || s.gameState?.status === 'finished')
+  const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
   const [dpr, setDpr] = useState(1.5)
   const [fx, setFx] = useState(true)
   const declines = useRef(0)
@@ -37,7 +39,7 @@ function Experience() {
     >
       <PerformanceMonitor onDecline={decline} flipflops={3} onFallback={() => (setDpr(1), setFx(false))} />
 
-      <Suspense fallback={null}>{inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
+      <Suspense fallback={null}>{inRoles ? <RolesWorld /> : inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
 
       {/* The composer renders the scene un-tonemapped, so bloom only picks up
           what is truly bright (HDR rims, beams) and never the characters;

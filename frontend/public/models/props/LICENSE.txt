@@ -1,0 +1,5 @@
+handheld.glb and Textures/colormap.png: the "blaster" model from Kenney's Blaster Kit,
+as shipped in https://github.com/KenneyNL/Starter-Kit-FPS (models/blaster.glb).
+
+License: Creative Commons Zero (CC0) — https://creativecommons.org/publicdomain/zero/1.0/
+Credit (not required): Kenney (www.kenney.nl)

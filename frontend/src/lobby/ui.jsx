@@ -3,7 +3,7 @@
  * the modal shell and item artwork.
  */
 import { themeThumb } from '../three/world/themes'
-import { useEffect, useId, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useReducer, useRef } from 'react'
 import { usePortrait } from '../three/world/characters'
 import { CARD_BACKS, FELTS, EMOTES } from '../items'
 import { useAppStore } from '../store/appStore'
@@ -104,6 +104,83 @@ export function GameLogo({ size = 36 }) {
 const HAND = [['#d9352c', '3'], ['#e8b417', '9'], [null, ''], ['#2bb24c', '5'], ['#2d7fd4', '7']] // null = the wild
 const SPARKS = [[58, 22, 5, '#4fd8ff'], [214, 72, 4, '#ffc53d'], [204, 16, 3, '#fff'], [30, 84, 3, '#ffc53d']]
 
+/** Raja Mantri Chor Sipahi's icon: a rolled chit tied with red thread, under a crown. */
+export function RolesLogo({ size = 36 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <g transform="rotate(-28 20 26)">
+        <rect x="5" y="21" width="30" height="11" rx="5.5" fill="#efe3c4" stroke="#5a4526" strokeWidth="1.2" />
+        <ellipse cx="32.4" cy="26.5" rx="2.6" ry="5.5" fill="#d8c79f" stroke="#5a4526" strokeWidth="1" />
+        <rect x="17.5" y="21" width="3.6" height="11" fill="#c0262d" />
+      </g>
+      <path d="M9 15 L10.5 6 L15 10.5 L20 3.5 L25 10.5 L29.5 6 L31 15 Z" fill="#f1bd3f" stroke="#6b4706" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+const CHITS = [[-80, 94, -8], [-27, 100, 6], [27, 100, -5], [80, 94, 9]] // x from centre, y, tilt
+
+/** Picker illustration for Raja Mantri Chor Sipahi: rolled chits, the Raja's opened, and the Mantri's blaster. */
+export function RolesArt() {
+  const id = useId().replace(/:/g, '')
+  return (
+    <svg className="lb-gart" viewBox="0 0 240 120" aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}s`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#150c33" />
+          <stop offset="1" stopColor="#331646" />
+        </linearGradient>
+        <radialGradient id={`${id}g`} cx=".5" cy=".38" r=".55">
+          <stop offset="0" stopColor="#ffc53d" stopOpacity=".55" />
+          <stop offset=".5" stopColor="#ff8a1e" stopOpacity=".15" />
+          <stop offset="1" stopColor="#ff8a1e" stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={`${id}f`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#17845a" />
+          <stop offset="1" stopColor="#0a3d27" />
+        </linearGradient>
+        <linearGradient id={`${id}p`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fbf3df" />
+          <stop offset="1" stopColor="#d9c79b" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="120" fill={`url(#${id}s)`} />
+      <rect width="240" height="120" fill={`url(#${id}g)`} />
+      <ellipse cx="120" cy="150" rx="160" ry="54" fill={`url(#${id}f)`} stroke="#4fd8ff" strokeOpacity=".7" strokeWidth="1.5" />
+      {CHITS.map(([dx, y, r]) => (
+        <g key={dx} transform={`translate(${120 + dx} ${y}) rotate(${r})`}>
+          <ellipse cx="0" cy="9" rx="22" ry="3" fill="#000" opacity=".25" />
+          <rect x="-23" y="-7" width="46" height="14" rx="7" fill={`url(#${id}p)`} stroke="#5a4526" strokeWidth="1" />
+          <ellipse cx="20.5" cy="0" rx="3" ry="7" fill="#d8c79f" stroke="#5a4526" strokeWidth=".8" />
+          <rect x="-3" y="-7" width="5" height="14" fill="#c0262d" />
+        </g>
+      ))}
+      <g transform="translate(120 50) rotate(-5)">
+        <rect x="-36" y="-21" width="72" height="44" rx="2" fill="#f4ead2" stroke="#8a6b3c" strokeWidth="1.2" />
+        <path d="M-30 -9 H30 M-30 1 H30 M-30 11 H30" stroke="#8a6b3c" strokeOpacity=".2" />
+        <text x="0" y="6" textAnchor="middle" fontSize="21" fontWeight="700" fill="#2a1a08" fontFamily='"Nirmala UI","Noto Sans Devanagari","Mangal",sans-serif'>
+          राजा
+        </text>
+        <text x="0" y="18" textAnchor="middle" fontSize="7.5" fontWeight="800" fill="#8a6b3c" letterSpacing=".08em">
+          RAJA · 1000
+        </text>
+      </g>
+      <path d="M103 25 L105 11 L112.5 18 L120 6 L127.5 18 L135 11 L137 25 Z" fill="#f1bd3f" stroke="#6b4706" strokeWidth="1.5" strokeLinejoin="round" />
+      <g transform="translate(208 62) rotate(10)">
+        <rect x="-14" y="-6" width="27" height="12" rx="2" fill="#19c6c0" stroke="#0b3f3d" strokeWidth="1" />
+        <rect x="-29" y="-3" width="16" height="6" rx="1.5" fill="#ff7a1a" stroke="#6b2f05" strokeWidth=".8" />
+        <rect x="3" y="4" width="7" height="13" rx="1.5" fill="#ff7a1a" stroke="#6b2f05" strokeWidth=".8" transform="rotate(14 6 4)" />
+        <circle cx="-30" cy="0" r="2.4" fill="#ffd23a" />
+      </g>
+      <g fill="#fff" opacity=".9">
+        <path d="M36 26 Q36 30 40 30 Q36 30 36 34 Q36 30 32 30 Q36 30 36 26z" />
+        <path d="M176 18 Q176 21 179 21 Q176 21 176 24 Q176 21 173 21 Q176 21 176 18z" />
+      </g>
+      <text x="34" y="62" fontSize="26" fontWeight="900" fill="#ffc53d" opacity=".85" fontFamily="var(--display)">?</text>
+    </svg>
+  )
+}
+
 /** Game picker illustration: a hand of cards fanned over a glowing table. Decorative. */
 export function GameArt() {
   const id = useId().replace(/:/g, '') // gradient ids must be unique per instance
@@ -162,8 +239,8 @@ const ICONS = {
   shop: <><path className="f" d="M4.4 11.6V20h15.2v-8.4" /><path d="M3 10.3 4.7 4h14.6l1.7 6.3a2.6 2.6 0 0 1-4.5 1.8 2.7 2.7 0 0 1-4.5 0 2.7 2.7 0 0 1-4.5 0A2.6 2.6 0 0 1 3 10.3zM9.6 20v-4.4h4.8V20M3.4 20h17.2" /></>,
   medal: <><path d="M8.2 3 10.6 9M15.8 3 13.4 9" /><circle className="f" cx="12" cy="14.6" r="5.6" /><path d="m12 11.9 1 1.9 2 .3-1.5 1.4.4 2.1-1.9-1-1.9 1 .4-2.1-1.5-1.4 2-.3z" /></>,
   bars: <><path className="f" d="M12 2.8 19.5 6v6.1c0 4.5-3.2 7.7-7.5 9.1-4.3-1.4-7.5-4.6-7.5-9.1V6z" /><path d="m8.4 9.6 3.6 2.5 3.6-2.5M8.4 13.6l3.6 2.5 3.6-2.5" /></>,
-  trophy: <><path className="f" d="M7 3.5h10v5.6a5 5 0 0 1-10 0z" /><path d="M7 5.6H4.2v1.2a3.7 3.7 0 0 0 3.4 3.7M17 5.6h2.8v1.2a3.7 3.7 0 0 1-3.4 3.7M12 14.1v3.2M8.6 20.6h6.8l-.7-3.3H9.3z" /></>,
   close: <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />,
+  search: <><circle className="f" cx="10.5" cy="10.5" r="6.3" /><path d="m15.2 15.2 5.3 5.3" /></>,
   smile: <><circle className="f" cx="12" cy="12" r="9" /><path d="M8.3 14.1a4.5 4.5 0 0 0 7.4 0M9.2 9.4v.8M14.8 9.4v.8" /></>,
   left: <path d="m14.5 5.5-6.5 6.5 6.5 6.5" />,
   right: <path d="m9.5 5.5 6.5 6.5-6.5 6.5" />,
@@ -176,9 +253,19 @@ export function Icon({ name }) {
   )
 }
 
+/** Whole seconds left until `until` (a Date.now() time), ticking once a second. */
+export function SecondsLeft({ until }) {
+  const [, tick] = useReducer((n) => n + 1, 0)
+  useEffect(() => {
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000))
+}
+
 /** Native modal dialog: focus trap, Esc and focus return come for free.
  *  The modal makes the page inert, so server notices/errors are echoed inside it. */
-export function Modal({ title, onClose, children, className = '' }) {
+export function Modal({ title, badge, onClose, children, className = '' }) {
   const ref = useRef(null)
   const error = useAppStore((s) => s.error)
   const notice = useAppStore((s) => s.notification)
@@ -200,7 +287,10 @@ export function Modal({ title, onClose, children, className = '' }) {
     >
       <div className="lb-dframe">
         <header className="lb-dhead">
-          <h2>{title}</h2>
+          <h2>
+            {title}
+            {badge && <small className="lb-dbadge">{badge}</small>}
+          </h2>
           <button className="lb-x" aria-label="Close" onClick={onClose}>
             <Icon name="close" />
           </button>
@@ -216,10 +306,33 @@ export function Modal({ title, onClose, children, className = '' }) {
   )
 }
 
+// Entrance icons (48-grid, two-tone like ICONS; the animations are in three/world/Entrance.jsx).
+const FIG = <><circle className="f" cx="24" cy="15" r="3.6" /><path className="f" d="M18.5 33v-9.5a5.5 5.5 0 0 1 11 0V33z" /></>
+const ENTRY_ART = {
+  'entry:classic': <><path className="f" d="m24 8 3.2 9.3 9.8.2-7.8 5.9 2.8 9.4L24 27.2l-8 5.6 2.8-9.4-7.8-5.9 9.8-.2z" /></>,
+  'entry:skydrop': <>{FIG}<path d="M24 2v6M20 5l4 4 4-4M9 40h30M13 36l-3-2M35 36l3-2" /></>,
+  'entry:teleport': <><path className="f" d="M15 4h18v36H15z" />{FIG}<path d="M11 40h26" /></>,
+  'entry:rise': <>{FIG}<path className="f" d="M11 37h26l-3 5H14z" /><path d="M24 46v-6" /></>,
+  'entry:tornado': <path d="M8 9h32M12 16h24M16 23h16M19 30h10M21 37h6M23 43h2" />,
+  'entry:smoke': <path className="f" d="M14 34a7 7 0 0 1-1-13.9 9 9 0 0 1 17.4-2.6A7.5 7.5 0 1 1 34 34z" />,
+  'entry:lightning': <path className="f" d="M27 3 12 26h10l-4 19 17-25H25z" />,
+  'entry:confetti': <><path className="f" d="m8 41 9-24 15 15z" /><path d="M27 9v4M35 13l-3 3M40 21h-4M30 6l1 2M38 6l-2 2M41 28l-2-1" /></>,
+  'entry:portal': <><ellipse className="f" cx="24" cy="24" rx="12" ry="18" /><ellipse cx="24" cy="24" rx="6.5" ry="11" /></>,
+  'entry:hologram': <>{FIG}<path d="M14 20h20M14 27h20M14 34h20" strokeDasharray="2 3" /></>,
+  'entry:hero': <><path className="f" d="M17 38c0-6 3-10 7-10s7 4 7 10z" /><circle className="f" cx="24" cy="23" r="3.6" /><path d="M8 42h32M10 34l-4-3M38 34l4-3M14 28l-3-4M34 28l3-4" /></>,
+}
+
 /** Picture for any catalog item. */
 export function ItemArt({ item }) {
   const id = item?.id || ''
   if (item?.kind === 'character') return <Avatar character={id} className="lb-art" />
+  if (item?.kind === 'entry') {
+    return (
+      <div className="lb-art lb-art--entry" aria-hidden="true">
+        <svg className="lb-ic" viewBox="0 0 48 48">{ENTRY_ART[id]}</svg>
+      </div>
+    )
+  }
   if (item?.kind === 'lobby') {
     return (
       <div className="lb-art lb-art--wide" aria-hidden="true">

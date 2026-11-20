@@ -1,7 +1,7 @@
 /**
  * LobbyWorld — the equipped lobby background (LobbyBackdrop), the party
- * standing on glowing pedestals with up-light beams, a hologram + "Invite" on
- * each free spot, and name plates above heads (DOM via drei <Html>).
+ * standing on glowing pedestals with up-light beams, a hologram on each free
+ * spot (invites live in the friends list), and name plates above heads (DOM via drei <Html>).
  * Your own character can be dragged to spin it round. Signed out, it shows
  * one pedestal with the starter being picked (also spinnable).
  */
@@ -15,6 +15,7 @@ import { useCharacterModel, DEFAULT_CHARACTER } from '../world/characters'
 import { animateFigure, LOBBY_EMOTES } from '../world/lobbyMotion'
 import { glowTexture, beamMaterial, PALETTE } from '../world/sky'
 import LobbyBackdrop from '../world/LobbyBackdrop'
+import Entrance from '../world/Entrance'
 import { Crest, rankColor } from '../../lobby/ui'
 
 // Leader front and centre, two flanks, two far spots (max party of 5).
@@ -114,15 +115,22 @@ function EmoteBubble({ memberId }) {
 const SPIN = 0.012 // radians per pixel dragged
 const setCursor = (c) => { document.body.style.cursor = c }
 
-/** Drag left/right on the character to spin it; let go and it coasts to a stop. */
+const HOME_AFTER = 1.5 // seconds at rest before a spun figure turns back to face the camera
+
+/** Drag left/right on the character to spin it; let go and it coasts to a stop,
+ *  then turns back to face the front. */
 function Spinnable({ x, z, children }) {
   const group = useRef()
-  const st = useRef({ drag: false, lastX: 0, vel: 0, yaw: 0 })
+  const st = useRef({ drag: false, lastX: 0, vel: 0, yaw: 0, still: 0 })
   useFrame((_, dt) => {
     const s = st.current
+    dt = Math.min(dt, 0.05)
     if (!s.drag && Math.abs(s.vel) > 1e-4) {
       s.yaw += s.vel
-      s.vel *= Math.pow(0.02, Math.min(dt, 0.05))   // friction: settles within about a second
+      s.vel *= Math.pow(0.02, dt)   // friction: settles within about a second
+    } else if (!s.drag && (s.still += dt) > HOME_AFTER) {
+      const home = Math.round(s.yaw / (2 * Math.PI)) * 2 * Math.PI // nearest full turn: never unwinds several spins
+      s.yaw += (home - s.yaw) * (1 - Math.pow(0.03, dt))
     }
     if (group.current) group.current.rotation.y = -x * 0.08 + s.yaw
   })
@@ -141,7 +149,7 @@ function Spinnable({ x, z, children }) {
         onPointerDown={(e) => {
           e.stopPropagation()
           e.target.setPointerCapture(e.pointerId)
-          Object.assign(st.current, { drag: true, lastX: e.clientX, vel: 0 })
+          Object.assign(st.current, { drag: true, lastX: e.clientX, vel: 0, still: 0 })
           setCursor('grabbing')
         }}
         onPointerMove={(e) => {
@@ -194,7 +202,7 @@ function NamePlate({ x, z, name, color, status, statusClass, children }) {
   )
 }
 
-/** The signed-in party: members on pedestals, invite spots on the rest. */
+/** The signed-in party: members on pedestals, holograms on the free spots. */
 function Party() {
   // Only what the scene shows: coins, chat, toasts etc. never re-render it.
   const party = useAppStore((s) => s.party)
@@ -203,11 +211,12 @@ function Party() {
       id: s.profile?.id,
       display_name: s.profile?.display_name,
       character: s.profile?.equipped?.character,
+      entry: s.profile?.equipped?.entry,
       rank_label: s.profile?.rank?.label,
     })),
   )
-  const openPanel = useAppStore((s) => s.openPanel)
   const send = useAppStore((s) => s.send)
+  const entryPreview = useAppStore((s) => s.entryPreview)
 
   const members = party?.members?.length ? party.members : [me]
   const iLead = (party?.leader_id ?? me.id) === me.id
@@ -222,14 +231,6 @@ function Party() {
           <Suspense fallback={null}>
             <Ghost x={x} z={z} />
           </Suspense>
-          <Html position={[x, 1.15, z]} center zIndexRange={[4, 0]}>
-            <div className="lb-tag lb-invite">
-              <button className="lb-plus" aria-label="Invite a friend to your party" onClick={() => openPanel('invite')}>
-                +
-              </button>
-              <span>Invite</span>
-            </div>
-          </Html>
         </group>
       )
     }
@@ -238,12 +239,19 @@ function Party() {
       <group key={m.id}>
         <Pedestal x={x} z={z} color={lead ? PALETTE.amber : PALETTE.cyan} />
         <Suspense fallback={null}>
+          {/* Entrance plays as the figure appears (its origin is the pedestal top) */}
           {m.id === me.id ? (
             <Spinnable x={x} z={z}>
-              <Figure character={m.character} memberId={m.id} x={0} z={0} y={0} yaw={0} phase={i * 1.7} />
+              <Entrance id={me.entry} preview={entryPreview}>
+                <Figure character={m.character} memberId={m.id} x={0} z={0} y={0} yaw={0} phase={i * 1.7} />
+              </Entrance>
             </Spinnable>
           ) : (
-            <Figure character={m.character} memberId={m.id} x={x} z={z} phase={i * 1.7} />
+            <group position={[x, H, z]} rotation-y={-x * 0.08}>
+              <Entrance id={m.entry}>
+                <Figure character={m.character} memberId={m.id} x={0} z={0} y={0} yaw={0} phase={i * 1.7} />
+              </Entrance>
+            </group>
           )}
         </Suspense>
         <NamePlate x={x} z={z} name={m.display_name} color={rankColor(m.rank_label)} status={status} statusClass={cls}>

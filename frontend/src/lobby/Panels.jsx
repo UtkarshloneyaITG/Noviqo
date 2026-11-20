@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { Coin, Crest, GameArt, ItemArt, Modal, TIERS, USERNAME_RE, normalizeUsername, rankColor, useItemMap } from './ui'
+import { Coin, GameArt, RolesArt, ItemArt, Modal, USERNAME_RE, normalizeUsername, useItemMap } from './ui'
 
 const KINDS = [
   ['character', 'Characters'],
@@ -12,6 +12,7 @@ const KINDS = [
   ['felt', 'Table felts'],
   ['emotes', 'Emotes'],
   ['lobby', 'Backgrounds'],
+  ['entry', 'Entrances'],
 ]
 
 function KindTabs({ kinds, kind, setKind }) {
@@ -89,6 +90,11 @@ function ItemTile({ item, shop }) {
         </span>
       )}
       {action}
+      {item.kind === 'entry' && (
+        <button className="lb-link lb-preview" onClick={() => useAppStore.getState().previewEntry(item.id)} aria-label={`Preview ${item.name} on your character`}>
+          Preview
+        </button>
+      )}
     </div>
   )
 }
@@ -183,55 +189,6 @@ export function Milestones({ onClose }) {
   )
 }
 
-export function Ranks({ onClose }) {
-  const profile = useAppStore((s) => s.profile)
-  const r = profile.rank || {}
-  const stats = profile.stats || { games: 0, wins: 0 }
-  const here = TIERS.findIndex((t) => t.name === r.tier)
-
-  return (
-    <Modal title="Ranks" onClose={onClose}>
-      <div className="lb-rankhero">
-        <Crest color={rankColor(r.label)} className="lb-crest lb-crest--big" />
-        <div className="t">
-          <div className="lb-display">{r.label}</div>
-          <small>{r.rp} RP</small>
-          <Bar value={r.into} max={r.span} />
-          <small>{r.next_label ? `${r.into} of ${r.span} RP to ${r.next_label}` : 'Top tier reached'}</small>
-        </div>
-        <dl className="lb-stats">
-          <div>
-            <dt>Games</dt>
-            <dd>{stats.games}</dd>
-          </div>
-          <div>
-            <dt>Wins</dt>
-            <dd>{stats.wins}</dd>
-          </div>
-          <div>
-            <dt>Win rate</dt>
-            <dd>{stats.games ? Math.round((100 * stats.wins) / stats.games) : 0}%</dd>
-          </div>
-        </dl>
-      </div>
-      <ol className="lb-ladder">
-        {TIERS.map((t, i) => (
-          <li key={t.name} className={i === here ? 'cur' : i < here ? 'past' : ''}>
-            <Crest color={t.color} />
-            <b>{t.name}</b>
-            <small>{t.name === 'Master' ? `${t.rp}+ RP` : `${t.rp} RP`}</small>
-            {i === here && <span>You are here</span>}
-          </li>
-        ))}
-      </ol>
-      <p className="lb-note">
-        Only ranked games change RP. In a 4-player game 1st gets +30, 2nd +10, 3rd −5 and 4th −15; leaving early costs 15.
-        Each tier has three divisions, III to I, of 100 RP each.
-      </p>
-    </Modal>
-  )
-}
-
 export function Settings({ onClose }) {
   const profile = useAppStore((s) => s.profile)
   const { send, signOut } = useAppStore.getState()
@@ -303,21 +260,33 @@ function AdminGive() {
 }
 
 const GAMES = [
-  { id: 'uno', name: 'UNO', ready: true },
+  { id: 'uno', name: 'UNO', Art: GameArt, seats: '2–5 players' },
+  { id: 'roles', name: 'Raja Mantri Chor Sipahi', Art: RolesArt, seats: '1–4 players, bots fill in' },
   { id: 'rummy', name: 'Rummy' },
   { id: 'hearts', name: 'Hearts' },
-  { id: 'spades', name: 'Spades' },
 ]
 
+/** The party leader picks what the party plays next. */
 export function GamePicker({ onClose }) {
+  const game = useAppStore((s) => s.party?.game) || 'uno'
+  const send = useAppStore((s) => s.send)
   return (
     <Modal title="Choose a game" onClose={onClose}>
       <div className="lb-games">
         {GAMES.map((g) => (
-          <button key={g.id} className={`lb-game ${g.ready ? 'act' : ''}`} disabled={!g.ready} aria-pressed={!!g.ready} onClick={onClose}>
-            {g.ready ? <GameArt /> : <span className="soon" aria-hidden="true">?</span>}
+          <button
+            key={g.id}
+            className={`lb-game ${game === g.id ? 'act' : ''}`}
+            disabled={!g.Art}
+            aria-pressed={game === g.id}
+            onClick={() => {
+              if (g.id !== game) send('party_set', { game: g.id })
+              onClose()
+            }}
+          >
+            {g.Art ? <g.Art /> : <span className="soon" aria-hidden="true">?</span>}
             <b>{g.name}</b>
-            <small>{g.ready ? 'Selected' : 'Coming soon'}</small>
+            <small>{!g.Art ? 'Coming soon' : game === g.id ? 'Selected' : g.seats}</small>
           </button>
         ))}
       </div>

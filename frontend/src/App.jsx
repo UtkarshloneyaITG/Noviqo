@@ -23,6 +23,7 @@ import Announcer from './components/Announcer'
 import ColorPicker from './components/ColorPicker'
 import Summary from './components/Summary'
 import PythonDocs from './components/PythonDocs'
+import RolesHud from './roles/RolesHud'
 
 // Hold the Game Over modal back briefly so the in-scene 3D win moment
 // (confetti over the table) reads first.
@@ -37,6 +38,7 @@ export default function App() {
   // Narrow selectors: chat lines, bubbles and timer ticks must not re-render
   // the root (and with it the whole HUD).
   const status = useAppStore((s) => s.gameState?.status)
+  const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
   const isConnected = useAppStore((s) => s.isConnected)
   const showColorPicker = useAppStore((s) => s.showColorPicker)
   const error = useAppStore((s) => s.error)
@@ -91,7 +93,9 @@ export default function App() {
       </div>
 
       {/* ── Screen-space HUD / overlays ────────────────────────────── */}
-      {!inGame ? (
+      {inRoles ? (
+        <RolesHud />
+      ) : !inGame ? (
         <Lobby />
       ) : (
         <>

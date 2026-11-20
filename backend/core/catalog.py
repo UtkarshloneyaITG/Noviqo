@@ -51,17 +51,25 @@ ITEMS: List[dict] = (
     + [_item("lobby:rooftop", "lobby", "Rooftop dusk"), _item("lobby:synthwave", "lobby", "Synthwave", 300),
        _item("lobby:beach", "lobby", "Moonlit beach", 300), _item("lobby:aurora", "lobby", "Aurora peaks", 400),
        _item("lobby:station", "lobby", "Orbital station", 500)]
+    # How your character appears on its lobby pedestal (frontend: three/world/entrances.js)
+    + [_item("entry:classic", "entry", "Classic"), _item("entry:skydrop", "entry", "Sky drop", 300),
+       _item("entry:teleport", "entry", "Teleport", 300), _item("entry:rise", "entry", "Rising platform", 300),
+       _item("entry:tornado", "entry", "Tornado", 400), _item("entry:smoke", "entry", "Smoke bomb", 400),
+       _item("entry:lightning", "entry", "Lightning strike", 500), _item("entry:confetti", "entry", "Confetti blast", 500),
+       _item("entry:portal", "entry", "Portal", 600), _item("entry:hologram", "entry", "Hologram", 600),
+       _item("entry:hero", "entry", "Hero landing", 800)]
 )
 ITEM_BY_ID: Dict[str, dict] = {i["id"]: i for i in ITEMS}
 STARTER_ITEMS: List[str] = [i["id"] for i in ITEMS if i["starter"]]
-SLOT_OF_KIND = {"character": "character", "card_back": "card_back", "felt": "felt", "lobby": "lobby"}   # emotes aren't equipped
+SLOT_OF_KIND = {"character": "character", "card_back": "card_back", "felt": "felt", "lobby": "lobby", "entry": "entry"}   # emotes aren't equipped
 
 # Lobby emotes (your character acts them out on its pedestal) → the emote pack that unlocks each.
 LOBBY_EMOTES: Dict[str, str] = {
     **dict.fromkeys(["wave", "cheer", "thumbs_up", "clap", "laugh", "think"], "emotes:basic"),
     **dict.fromkeys(["dance", "salute", "bow", "flex"], "emotes:party"),
 }
-DEFAULT_EQUIPPED = {"character": "char:m-Casual", "card_back": "back:classic", "felt": "felt:green", "lobby": "lobby:rooftop"}
+DEFAULT_EQUIPPED = {"character": "char:m-Casual", "card_back": "back:classic", "felt": "felt:green", "lobby": "lobby:rooftop",
+                    "entry": "entry:classic"}
 
 # ── coins and rank points ────────────────────────────────────────────────
 

@@ -33,6 +33,7 @@ function writeToken(token) {
 }
 
 const CHAT_KEEP = 100
+const INVITE_MS = 30_000 // how long a party invite lasts (server: parties.INVITE_TTL_S)
 const keep = (list, msg) => [...list, msg].slice(-CHAT_KEEP)
 
 let actionPendingTimer = null
@@ -47,14 +48,17 @@ const ACCOUNT_STATE = {
   incoming: [],
   outgoing: [],
   party: null,
-  invites: [],      // party_invite messages awaiting an answer
+  invites: [],      // party_invite messages awaiting an answer (each lapses at expires_at)
+  sentInvites: {},  // party invites you sent: friend id -> when they lapse (ms)
   requests: [],     // party_request messages awaiting an answer (leader)
   gchat: [],
   pchat: [],
   emotes: {},       // lobby emote last played by each party member: id -> { id: emote, at: performance.now() }
   newItems: [],     // item ids unlocked by recent games, until Inventory is opened
   leaderboard: null, // last 'leaderboard' reply: { board, scope, rows, me }
-  panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|invite|games
+  userResults: null, // last 'user_results' reply (Add friend page): { q, users }
+  rolesState: null,  // your view of a Raja Mantri Chor Sipahi table (+ deadline: Date.now() ms), or null
+  panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|addfriend|invite|games
   playerId: null,
   roomId: null,
   gameState: null,
@@ -118,6 +122,9 @@ export const useAppStore = create((set, get) => ({
 
   openPanel: (panel) => set({ panel }),
   closePanel: () => set({ panel: null }),
+  // Shop "Preview": close the panel and play that entrance on your own figure.
+  entryPreview: null, // { id, at }
+  previewEntry: (id) => set({ panel: null, entryPreview: { id, at: performance.now() } }),
   setSignup: (signup) => set({ signup }),
 
   _clearActionPending: () => {
@@ -195,6 +202,22 @@ export const useAppStore = create((set, get) => ({
         break
       }
 
+      case 'roles_state': {
+        const st = message.state
+        set({ rolesState: { ...st, deadline: st.ms_left == null ? null : Date.now() + st.ms_left } })
+        break
+      }
+
+      case 'roles_left': {
+        set({ rolesState: null, bubbles: {} })
+        break
+      }
+
+      case 'user_results': {
+        set({ userResults: { q: message.q, users: message.users || [] } })
+        break
+      }
+
       case 'friends': {
         set({
           friends: message.friends || [],
@@ -219,9 +242,10 @@ export const useAppStore = create((set, get) => ({
       }
 
       case 'party_invite': {
-        set((s) => ({
-          invites: [...s.invites.filter((i) => i.party_id !== message.party_id), message],
-        }))
+        // The server lets it lapse after expires_in seconds; drop the toast at the same moment.
+        const invite = { ...message, expires_at: Date.now() + (message.expires_in ?? INVITE_MS / 1000) * 1000 }
+        set((s) => ({ invites: [...s.invites.filter((i) => i.party_id !== message.party_id), invite] }))
+        setTimeout(() => set((s) => ({ invites: s.invites.filter((i) => i !== invite) })), invite.expires_at - Date.now())
         break
       }
 
@@ -377,6 +401,27 @@ export const useAppStore = create((set, get) => ({
   acceptInvite: (partyId) => {
     get().send('party_accept', { party_id: partyId })
     get().dismissInvite(partyId)
+  },
+
+  /** Invite a friend to your party; the button counts down until the invite lapses. */
+  // Raja Mantri Chor Sipahi: take a chit, swing the blaster, fire, go back to the lobby.
+  rolesPick: (slot) => get().send('roles_pick', { slot }),
+  rolesAim: (target) => get().send('roles_aim', { target }),
+  rolesGuess: (target) => get().send('roles_guess', { target }),
+  rolesLeave: () => {
+    get().send('roles_leave')
+    set({ rolesState: null, bubbles: {} })
+  },
+
+  inviteFriend: (id) => {
+    get().send('party_invite', { id })
+    const until = Date.now() + INVITE_MS
+    set((s) => ({ sentInvites: { ...s.sentInvites, [id]: until } }))
+    setTimeout(() => set((s) => {
+      if (s.sentInvites[id] !== until) return {}
+      const { [id]: _, ...rest } = s.sentInvites
+      return { sentInvites: rest }
+    }), INVITE_MS)
   },
 
   // No decline message exists for invites — "Not now" just hides it.

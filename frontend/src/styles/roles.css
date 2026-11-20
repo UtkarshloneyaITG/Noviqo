@@ -1,0 +1,112 @@
+/* Raja Mantri Chor Sipahi: the name plates over seated players (three/roles)
+   and the screen overlay (roles/RolesHud). Same look as the lobby: dark glass
+   panels, cyan and amber, Big Shoulders Display + Figtree. */
+
+.rm, .rm-tag {
+  --ink: #070a18; --panel: rgba(9, 14, 34, .78); --line: rgba(110, 190, 255, .22);
+  --cyan: #4fd8ff; --amber: #ffc53d; --red: #ff4d6d; --green: #3df2a0; --text: #eef3ff; --muted: #8e9bc0;
+  --display: "Big Shoulders Display", Impact, sans-serif; --ui: "Figtree", system-ui, sans-serif;
+  --cut: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  --cut-s: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  font-family: var(--ui); color: var(--text);
+}
+.rm { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+.rm > * { position: absolute; pointer-events: auto; }
+.rm button, .rm input { font: inherit; color: inherit; border: 0; background: none; }
+.rm :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.rm-panel { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); clip-path: var(--cut); }
+.rm .rm-btn { height: 36px; padding: 0 16px; font-weight: 800; font-size: 14px; background: rgba(255,255,255,.1); clip-path: var(--cut-s); cursor: pointer; }
+.rm .rm-btn:hover { background: rgba(255,255,255,.18); }
+.rm .rm-btn.go { background: var(--cyan); color: #04202b; }
+.rm .rm-btn.danger { background: rgba(255,77,109,.85); color: #fff; }
+
+/* ── top: round + leave ── */
+.rm-top { inset: 16px 16px auto 16px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
+.rm-top > * { pointer-events: auto; }
+.rm-round { padding: 8px 16px 10px; display: flex; flex-direction: column; }
+.rm-round b { font: 900 32px/1 var(--display); letter-spacing: .04em; }
+.rm-round b small { font-size: 20px; color: var(--muted); }
+.rm-round span { font-size: 12px; font-weight: 700; color: var(--amber); letter-spacing: .04em; }
+.rm-leave { display: flex; align-items: center; gap: 8px; }
+.rm-leave span { padding: 8px 12px; font-size: 13px; background: var(--panel); clip-path: var(--cut-s); }
+
+/* ── prompt ── */
+.rm-prompt { left: 50%; top: 18px; transform: translateX(-50%); max-width: min(760px, 70vw); text-align: center; pointer-events: none;
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 26px 12px; background: linear-gradient(180deg, rgba(9,14,34,.9), rgba(9,14,34,.6)); clip-path: var(--cut); }
+.rm-prompt b { font: 900 34px/1.05 var(--display); letter-spacing: .03em; }
+.rm-prompt span { font-size: 15px; color: #cfd8ff; }
+
+/* ── scores (right) ── */
+.rm-board { right: 16px; top: 84px; width: 250px; list-style: none; margin: 0; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.rm-board li { display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 8px; padding: 6px 8px; background: rgba(255,255,255,.04); clip-path: var(--cut-s); }
+.rm-board li.me { background: rgba(255,197,61,.14); box-shadow: inset 3px 0 0 var(--amber); }
+.rm-board .ic { font-size: 18px; text-align: center; }
+.rm-board .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 14px; }
+.rm-board i, .rm-tag i, .rm-endcard i { margin-left: 6px; padding: 0 5px; font: 800 10px/16px var(--ui); font-style: normal; color: #04202b; background: var(--muted); clip-path: var(--cut-s); vertical-align: middle; }
+.rm-board em { font-style: normal; font-weight: 800; font-size: 13px; color: var(--green); }
+.rm-board b { font: 800 20px/1 var(--display); letter-spacing: .03em; }
+
+/* ── your chit (bottom left) ── */
+.rm-chit { left: 16px; bottom: 16px; width: 260px; padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 2px; color: #2a1a08;
+  background: linear-gradient(180deg, #f7eedb, #eadbb8); clip-path: var(--cut); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--rc) 70%, transparent); }
+.rm-chit small { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8a6b3c; }
+.rm-chit b { font: 700 46px/1.1 "Nirmala UI", "Noto Sans Devanagari", "Mangal", sans-serif; }
+.rm-chit span { font: 800 20px/1 var(--display); letter-spacing: .04em; }
+.rm-chit p { margin: 6px 0 0; font-size: 12.5px; color: #5a4526; }
+
+/* ── the Mantri's controls (bottom centre) ── */
+.rm-act { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.rm-time { width: 420px; height: 6px; background: rgba(255,255,255,.12); clip-path: var(--cut-s); }
+.rm-time i { display: block; height: 100%; background: linear-gradient(90deg, var(--red), var(--amber)); animation: rm-drain linear forwards; }
+@keyframes rm-drain { to { width: 0; } }
+.rm-aims { display: flex; gap: 10px; }
+.rm .rm-aims button { height: 46px; padding: 0 20px; font-weight: 800; font-size: 16px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); clip-path: var(--cut-s); cursor: pointer; }
+.rm .rm-aims button.on { background: rgba(255,77,109,.22); box-shadow: inset 0 0 0 2px var(--red); }
+.rm .rm-fire { width: 240px; height: 74px; display: flex; align-items: center; justify-content: center; gap: 14px; cursor: pointer;
+  font: 900 46px/1 var(--display); letter-spacing: .08em; color: #fff; background: linear-gradient(180deg, #ff7a8f, var(--red) 55%, #c4183a); clip-path: var(--cut); }
+.rm .rm-fire small { font: 800 14px var(--ui); letter-spacing: 0; opacity: .85; }
+.rm .rm-fire:disabled { filter: saturate(.3) brightness(.6); cursor: not-allowed; }
+.rm .rm-fire:not(:disabled):hover { filter: brightness(1.1); }
+
+/* ── table chat (bottom right) ── */
+.rm-chat { right: 16px; bottom: 16px; width: 300px; padding: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.rm-chat .mine { flex: 1 1 100%; margin: 0; padding: 6px 10px; font-size: 13px; background: rgba(79,216,255,.14); clip-path: var(--cut-s); }
+.rm .rm-chat input { flex: 1; min-width: 0; height: 36px; padding: 0 10px; background: rgba(0,0,0,.35); font-size: 14px; clip-path: var(--cut-s); outline-offset: -2px; }
+.rm-toast { left: 50%; top: 116px; transform: translateX(-50%); padding: 8px 14px; font-weight: 700; font-size: 14px; background: rgba(255,77,109,.9); clip-path: var(--cut-s); }
+
+/* ── final standings ── */
+.rm-end { inset: 0; display: grid; place-items: center; background: rgba(4,6,18,.66); }
+.rm-endcard { width: min(460px, 92vw); padding: 22px 24px 24px; display: flex; flex-direction: column; gap: 12px; }
+.rm-endcard h2 { margin: 0; font: 900 38px/1 var(--display); letter-spacing: .04em; }
+.rm-endcard ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rm-endcard li { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,.05); clip-path: var(--cut-s); }
+.rm-endcard li.me { background: rgba(255,197,61,.14); box-shadow: inset 3px 0 0 var(--amber); }
+.rm-endcard .pl { font: 900 26px/1 var(--display); color: var(--muted); text-align: center; }
+.rm-endcard li.p1 .pl { color: #f1bd3f; }
+.rm-endcard .nm { font-weight: 700; }
+.rm-endcard b { font: 800 22px/1 var(--display); }
+.rm-reward { margin: 0; font-weight: 800; color: var(--amber); }
+
+/* ── name plates over seated players (drei <Html>) ── */
+.rm-tag { display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; white-space: nowrap; }
+.rm-tag--off { opacity: .55; }
+.rm-plate { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); clip-path: var(--cut-s); }
+.rm-plate b { font-size: 15px; }
+.rm-plate span { font: 800 16px/1 var(--display); color: var(--amber); }
+.rm-tag small { padding: 1px 8px; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--panel); clip-path: var(--cut-s); }
+.rm-badge { padding: 3px 12px; font: 900 18px/1.1 var(--display); letter-spacing: .06em; color: #04202b; background: var(--rc); clip-path: var(--cut-s); }
+.rm-tag em { font: 900 22px/1 var(--display); font-style: normal; color: var(--muted); }
+.rm-tag em.up { color: var(--green); }
+.rm-bubble { max-width: 220px; padding: 6px 12px; font-size: 14px; white-space: normal; text-align: center; color: #04202b; background: #fff; border-radius: 14px; }
+.rm-stamp { padding: 4px 14px; font: 900 30px/1 var(--display); letter-spacing: .08em; color: #fff; transform: rotate(-6deg); clip-path: var(--cut-s); animation: rm-stamp .35s cubic-bezier(.2,1.6,.4,1) both; }
+.rm-stamp.ok { background: var(--red); }
+.rm-stamp.miss { background: #5b6280; }
+@keyframes rm-stamp { from { transform: rotate(-6deg) scale(2.2); opacity: 0; } }
+
+/* Phones held sideways: everything a size smaller. */
+@media (max-height: 500px) {
+  .rm { zoom: .62; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rm-stamp, .rm-time i { animation: none; }
+}

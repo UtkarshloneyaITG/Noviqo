@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from core.parties import Parties, PartyError
+from core.parties import INVITE_SLACK_S, INVITE_TTL_S, Parties, PartyError
 
 
 @pytest.fixture
@@ -31,6 +31,19 @@ class TestParties:
         pt.accept("b", pid)
         assert pt.of("b").members == ["a", "b"] and pt.of("b") is pt.of("a")
         assert old.id not in pt.parties                 # the empty solo party is gone
+
+    def test_invite_lapses_after_its_time(self):
+        now = [0.0]
+        pt = Parties(clock=lambda: now[0])
+        solo(pt, "a", "b", "c")
+        pid = pt.invite("a", "b")
+        pt.invite("a", "c")
+        now[0] = INVITE_TTL_S + INVITE_SLACK_S - 0.1     # still good (network slack included)
+        pt.accept("c", pid)
+        now[0] = INVITE_TTL_S + INVITE_SLACK_S
+        with pytest.raises(PartyError, match="expired"):
+            pt.accept("b", pid)
+        assert pt.invite("a", "b") == pid and pt.of("a").invited.keys() == {"b"}  # re-invite; lapsed ones pruned
 
     def test_accept_without_invite_rejected(self, pt):
         solo(pt, "a", "b")
@@ -83,6 +96,18 @@ class TestParties:
         with pytest.raises(PartyError):
             pt.check_start("b")                         # not the leader
         assert pt.check_start("a").members == ["a", "b"]
+
+    def test_roles_starts_alone_and_seats_four_at_most(self, pt):
+        solo(pt, "a", *"bcde")
+        pt.configure("a", {"game": "roles"})
+        assert pt.check_start("a").game == "roles"     # alone: bots fill the other three seats
+        for x in "bcde":
+            pt.accept(x, pt.invite("a", x))
+            pt.set_ready(x, True)
+        with pytest.raises(PartyError, match="seats 4"):
+            pt.check_start("a")
+        with pytest.raises(PartyError, match="games on offer"):
+            pt.configure("a", {"game": "chess"})
 
     def test_settings_leader_only_and_validated(self, pt):
         solo(pt, "a", "b")

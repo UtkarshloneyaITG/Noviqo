@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
+import core.roles
 import core.session
 from core.limits import Limiter
 from core.item import Card, CardType, Color
@@ -27,7 +28,7 @@ def client(monkeypatch):
     monkeypatch.setattr(main, "CHAT_GAP_S", 0)
     monkeypatch.setattr(core.session, "COUNTDOWN_S", 0)   # tests that need it set it back
     # The suite makes hundreds of accounts from one address: rate-limit tests set their own limits.
-    for name in ("messages_per_socket", "failed_signins", "signups_per_address"):
+    for name in ("messages_per_socket", "failed_signins", "signups_per_address", "searches_per_account"):
         monkeypatch.setattr(main, name, Limiter(10**6, 60))
     with TestClient(main.app) as c:
         yield c
@@ -68,7 +69,9 @@ def befriend(a, b, a_id, b_name):
 
 def party_up(a, b, b_id):
     a.send_json({"type": "party_invite", "id": b_id})
-    b.send_json({"type": "party_accept", "party_id": recv(b, "party_invite")["party_id"]})
+    invite = recv(b, "party_invite")
+    assert invite["expires_in"] == 30                    # the client counts this down
+    b.send_json({"type": "party_accept", "party_id": invite["party_id"]})
     b.send_json({"type": "party_ready", "ready": True})
     while True:
         p = recv(a, "party")["party"]
@@ -151,6 +154,16 @@ def test_only_friends_can_be_invited(client):
         b_id, _, _ = signup(b)
         a.send_json({"type": "party_invite", "id": b_id})
         assert "friends" in recv(a, "error")["message"]
+
+
+def test_party_members_carry_their_entrance(client):
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+        a_id, _, _ = signup(a)
+        b_id, _, b_name = signup(b)
+        befriend(a, b, a_id, b_name)
+        party_up(a, b, b_id)
+        view = main._party_view(main.parties.of(a_id))
+        assert [m["entry"] for m in view["members"]] == ["entry:classic", "entry:classic"]
 
 
 # ── party → game ─────────────────────────────────────────────────────────
@@ -265,6 +278,23 @@ def test_rewards_are_paid_exactly_once(client):
         loser_ws.send_json({"type": "leave_room"})   # re-broadcasts the finished table
         drain(loser_ws), drain(socks[winner])
         assert main.accounts.profile(winner)["coins"] == coins
+
+
+def test_back_to_lobby_after_the_end_does_not_reopen_the_results(client):
+    with ExitStack() as sa, ExitStack() as sb:
+        a, b, a_id, b_id, game, _ = start(client, sa, sb)
+        win_now(game, {a_id: a, b_id: b})
+        drain(a), drain(b)
+        a.send_json({"type": "leave_room"})
+        assert not any(m["type"] == "game_state" for m in drain(a))
+
+
+def test_leaving_mid_game_does_not_show_you_the_end(client):
+    with ExitStack() as sa, ExitStack() as sb:
+        a, b, a_id, b_id, game, _ = start(client, sa, sb)
+        a.send_json({"type": "leave_room"})
+        assert not any(m["type"] in ("game_state", "player_left") for m in drain(a))
+        assert [m for m in drain(b) if m["type"] == "game_state"][-1]["state"]["status"] == "finished"
 
 
 def test_play_again_deals_immediately(client):
@@ -416,3 +446,125 @@ def test_unknown_emotes_and_floods_are_refused(client):
         a.send_json({"type": "emote", "emote": "wave"})
         a.send_json({"type": "emote", "emote": "cheer"})                 # inside EMOTE_GAP_S: dropped
         assert [m["emote"] for m in drain(a) if m["type"] == "emote"] == ["wave"]
+
+
+# ── Add friend search ────────────────────────────────────────────────────
+
+def test_user_search_finds_players_by_name_with_public_fields_only(client):
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+        a_id, _, _ = signup(a)
+        b_id, _, b_name = signup(b, "Gamer Bo")
+        a.send_json({"type": "user_search", "q": "gamer"})
+        res = recv(a, "user_results")
+        assert res["q"] == "gamer" and [u["id"] for u in res["users"]] == [b_id]
+        assert set(res["users"][0]) == {"id", "username", "display_name", "character", "status", "rank_label"}
+        assert res["users"][0]["status"] == "online"
+        a.send_json({"type": "user_search", "q": ""})                   # empty box: suggestions, never yourself
+        ids = [u["id"] for u in recv(a, "user_results")["users"]]
+        assert b_id in ids and a_id not in ids
+
+
+def test_user_search_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr(main, "searches_per_account", Limiter(2, 60))
+    with client.websocket_connect("/ws") as a:
+        signup(a)
+        for _ in range(2):
+            a.send_json({"type": "user_search", "q": "x"})
+            recv(a, "user_results")
+        a.send_json({"type": "user_search", "q": "x"})
+        assert "too fast" in recv(a, "error")["message"]
+
+
+def test_server_rank_lists_every_player_first_to_last(client):
+    with client.websocket_connect("/ws") as a, client.websocket_connect("/ws") as b:
+        a_id, _, _ = signup(a)
+        b_id, _, _ = signup(b)
+        main.accounts.accounts[b_id]["rp"]["uno"] = 120          # b out-ranks a; a never played
+        a.send_json({"type": "leaderboard", "board": "rp", "scope": "server"})
+        msg = recv(a, "leaderboard")
+        ids = [r["id"] for r in msg["rows"]]
+        assert len(ids) == len(main.accounts.accounts) and ids.index(b_id) < ids.index(a_id)
+        assert [r["place"] for r in msg["rows"]] == list(range(1, len(ids) + 1))
+        assert msg["me"]["id"] == a_id and msg["me"]["place"] == ids.index(a_id) + 1
+
+
+# ── Raja Mantri Chor Sipahi ──────────────────────────────────────────────
+
+def roles_state(ws, until=lambda st: True):
+    while True:
+        st = recv(ws, "roles_state")["state"]
+        if until(st):
+            return st
+
+
+def start_roles(client, stack, friends=0):
+    """A party (leader + `friends`) starts a roles table; returns sockets, ids and the match."""
+    socks = [stack.enter_context(client.websocket_connect("/ws")) for _ in range(friends + 1)]
+    ids = [signup(ws)[0] for ws in socks]
+    for ws, aid in zip(socks[1:], ids[1:]):
+        befriend(socks[0], ws, ids[0], main.accounts.accounts[aid]["username"])
+        party_up(socks[0], ws, aid)
+    socks[0].send_json({"type": "party_set", "game": "roles"})
+    socks[0].send_json({"type": "party_start"})
+    states = [roles_state(ws) for ws in socks]
+    return socks, ids, states, main._roles_of(ids[0])
+
+
+def test_roles_solo_table_fills_with_bots_and_hides_roles(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), (st,), match = start_roles(client, stack)
+        assert st["phase"] == "pick" and st["round"] == 1 and st["me"] == a_id
+        assert sum(s["bot"] for s in st["seats"]) == 3 and st["ms_left"] is None   # no timer: you must pick
+        match.due.clear()                                    # the bots wait, so the test drives every pick
+        for s in match.seats:
+            if s.bot:
+                match.pick(s.id, next(i for i in range(4) if i not in match.taken))
+        a.send_json({"type": "roles_pick", "slot": next(i for i in range(4) if i not in match.taken)})
+        st = roles_state(a, lambda x: x["phase"] == "raja")
+        seen = {s["id"]: s["role"] for s in st["seats"]}
+        assert seen[a_id] == match.role[a_id]
+        assert all(r in (None, "raja") for sid, r in seen.items() if sid != a_id)   # only the Raja is public
+        a.send_json({"type": "roles_guess", "target": a_id})
+        assert "isn't time" in recv(a, "error")["message"]
+
+
+def test_roles_mantri_fires_at_the_chor_and_the_match_pays_out(client, monkeypatch):
+    for phase in ("raja", "mantri", "result"):
+        monkeypatch.setitem(core.roles.TIMES, phase, 0.05)
+    with ExitStack() as stack:
+        (a,), (a_id,), _, match = start_roles(client, stack)
+        match.rounds = 1
+        match.due.clear()
+        mantri_slot = match.slips.index("mantri")
+        for s in match.seats:
+            if s.bot:
+                match.pick(s.id, next(i for i in range(4) if i not in match.taken and i != mantri_slot))
+        coins = main.accounts.profile(a_id)["coins"]
+        a.send_json({"type": "roles_pick", "slot": mantri_slot})
+        st = roles_state(a, lambda x: x["phase"] == "guess")
+        chor = match.holder("chor")
+        assert set(st["suspects"]) == {chor, match.holder("sipahi")}
+        a.send_json({"type": "roles_aim", "target": chor})
+        assert roles_state(a)["aim"] == chor                 # everyone sees where the blaster points
+        a.send_json({"type": "roles_guess", "target": chor})
+        st = roles_state(a, lambda x: x["phase"] == "result")
+        assert st["last"]["correct"] and st["last"]["points"][a_id] == 800
+        st = roles_state(a, lambda x: x["phase"] == "finished")
+        assert st["standings"][0]["id"] == match.holder("raja") and st["reward"]["coins"] > 0
+        assert recv(a, "game_rewards")["rewards"] == st["reward"]
+        assert main.accounts.profile(a_id)["coins"] == coins + st["reward"]["coins"]
+
+
+def test_roles_table_chat_and_leaving(client):
+    with ExitStack() as stack:
+        (a, b), (a_id, b_id), (sa, sb), match = start_roles(client, stack, friends=1)
+        assert sa["id"] == sb["id"] and sum(s["bot"] for s in sa["seats"]) == 2
+        b.send_json({"type": "chat", "text": "not me!"})
+        assert recv(a, "chat")["text"] == "not me!"
+        b.send_json({"type": "roles_leave"})
+        recv(b, "roles_left")
+        assert roles_state(a, lambda x: any(s["left"] for s in x["seats"]))   # b's seat now plays itself
+        a.send_json({"type": "roles_leave"})
+        recv(a, "roles_left")
+        assert match.id not in main.role_matches                              # last human out closes it
+

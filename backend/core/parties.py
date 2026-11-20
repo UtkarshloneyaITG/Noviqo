@@ -5,11 +5,16 @@ Everyone signed in is always in exactly one party (a solo one to begin
 with); the leader is members[0]. In-memory only: parties are rebuilt as
 people sign back in after a restart.
 """
+import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Set
+from typing import Callable, Dict, List, Set
 
 MAX_MEMBERS = 5
+# People a party needs to start each game: (fewest, most). Roles fills empty seats with bots.
+GAMES = {"uno": (2, MAX_MEMBERS), "roles": (1, 4)}
+INVITE_TTL_S = 30        # an unanswered invite lapses after this
+INVITE_SLACK_S = 2       # accepting just as the invitee's countdown ends still works (network delay)
 
 
 class PartyError(Exception):
@@ -22,8 +27,9 @@ class Party:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     members: List[str] = field(default_factory=list)
     ready: Set[str] = field(default_factory=set)       # non-leaders who pressed Ready
-    invited: Set[str] = field(default_factory=set)     # outstanding invites
+    invited: Dict[str, float] = field(default_factory=dict)  # outstanding invites: id -> when it lapses
     requests: Set[str] = field(default_factory=set)    # outstanding join requests
+    game: str = "uno"
     mode: str = "casual"
     turn_seconds: int = 30
     stack_draw_cards: bool = False
@@ -34,7 +40,8 @@ class Party:
 
 
 class Parties:
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self.clock = clock
         self.parties: Dict[str, Party] = {}
         self.member_of: Dict[str, str] = {}
 
@@ -82,15 +89,17 @@ class Parties:
             raise PartyError("They're already in your party.")
         if p.full:
             raise PartyError("Your party is full.")
-        p.invited.add(to_id)
+        now = self.clock()
+        p.invited = {aid: t for aid, t in p.invited.items() if t > now}   # drop lapsed ones
+        p.invited[to_id] = now + INVITE_TTL_S + INVITE_SLACK_S
         return p.id
 
     def accept(self, aid: str, party_id: str) -> Party:
         p = self.parties.get(party_id)
-        if not p or aid not in p.invited:
+        if not p or p.invited.get(aid, 0) <= self.clock():
             raise PartyError("That invite has expired.")
         self._join(aid, p)
-        p.invited.discard(aid)
+        p.invited.pop(aid, None)
         return p
 
     def request(self, aid: str, friend_id: str) -> str:
@@ -144,6 +153,10 @@ class Parties:
 
     def configure(self, leader: str, settings: dict) -> Party:
         p = self._leader_party(leader, "change the settings")
+        if "game" in settings:
+            if settings["game"] not in GAMES:
+                raise PartyError("Pick one of the games on offer.")
+            p.game = settings["game"]
         if "mode" in settings:
             if settings["mode"] not in ("casual", "ranked"):
                 raise PartyError("Mode must be casual or ranked.")
@@ -158,8 +171,11 @@ class Parties:
 
     def check_start(self, aid: str) -> Party:
         p = self._leader_party(aid, "start")
-        if len(p.members) < 2:
+        fewest, most = GAMES[p.game]
+        if len(p.members) < fewest:
             raise PartyError("Invite at least one friend to start.")
+        if len(p.members) > most:
+            raise PartyError(f"This game seats {most}. Someone needs to leave the party first.")
         if any(m not in p.ready for m in p.members[1:]):
             raise PartyError("Waiting for everyone to be ready.")
         return p

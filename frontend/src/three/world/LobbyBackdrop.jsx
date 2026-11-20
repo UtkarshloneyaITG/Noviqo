@@ -1,6 +1,7 @@
 /**
  * LobbyBackdrop — everything around the squad for the equipped lobby
- * background: sky, fog, floor, light rig and drifting particles.
+ * background: the painted sky (SkyLayers), fog, floor, light rig and
+ * drifting particles.
  *
  *   <LobbyBackdrop themeId={profile.equipped.lobby} />
  *
@@ -8,17 +9,25 @@
  * (beach deck, station platform) use a finite disc so the painted sea /
  * space shows beyond its edge.
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { glowTexture } from './sky'
 import { themeFor } from './themes'
+import { MOTES_VERT, MOTES_FRAG } from './skyShader'
+import SkyLayers from './SkyLayers'
 
 const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function Floor({ floor }) {
   const map = floor.map()
   const island = floor.size < 40
+  const edge = useRef()
+  const edgeColor = useMemo(() => new THREE.Color(floor.edge ?? '#000'), [floor.edge])
+  useFrame(({ clock }) => {
+    if (reduce) return
+    if (floor.scroll) map.offset.y = (clock.elapsedTime * floor.scroll) % 1 // toward the camera
+    if (floor.pulse && edge.current) edge.current.color.copy(edgeColor).multiplyScalar(1.6 + 0.6 * Math.sin(clock.elapsedTime * 2))
+  })
   return (
     <group>
       <mesh rotation-x={-Math.PI / 2} receiveShadow>
@@ -29,7 +38,7 @@ function Floor({ floor }) {
         <mesh rotation-x={Math.PI / 2} position-y={0.03}>
           <torusGeometry args={[floor.size / 2, floor.edgeGlow ? 0.05 : 0.12, 8, 96]} />
           {floor.edgeGlow
-            ? <meshBasicMaterial color={floor.edge} />
+            ? <meshBasicMaterial ref={edge} color={floor.edge} />
             : <meshStandardMaterial color={floor.edge} roughness={0.7} />}
         </mesh>
       )}
@@ -37,45 +46,56 @@ function Floor({ floor }) {
   )
 }
 
+/** Drifting particles, moved entirely on the GPU: no per-frame buffer upload. */
 function Motes({ motes }) {
-  const { count, speed } = motes
+  const { count } = motes
   const geo = useMemo(() => {
     const p = new Float32Array(count * 3)
+    const phase = new Float32Array(count)
     for (let i = 0; i < count; i++) {
       p[i * 3] = (Math.random() - 0.5) * 10
       p[i * 3 + 1] = Math.random() * 4.5
       p[i * 3 + 2] = -4 + Math.random() * 5
+      phase[i] = Math.random()
     }
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(p, 3))
+    g.setAttribute('phase', new THREE.BufferAttribute(phase, 1))
     return g
   }, [count])
-  useFrame((_, dt) => {
-    if (reduce) return
-    const a = geo.attributes.position
-    const step = Math.min(dt, 0.05) * speed
-    for (let i = 0; i < a.count; i++) {
-      let y = a.getY(i) + step
-      if (y > 4.5) y -= 4.5
-      else if (y < 0) y += 4.5          // snow falls and wraps back to the top
-      a.setY(i, y)
-    }
-    a.needsUpdate = true
-  })
-  return (
-    <points geometry={geo}>
-      <pointsMaterial map={glowTexture()} size={motes.size} color={motes.color} transparent depthWrite={false}
-        blending={THREE.AdditiveBlending} />
-    </points>
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: MOTES_VERT,
+        fragmentShader: MOTES_FRAG,
+        uniforms: {
+          uTime: { value: 0 },
+          uSpeed: { value: motes.speed },
+          uSize: { value: motes.size },
+          uScale: { value: 1 },
+          uDrift: { value: motes.drift ?? 0 },
+          uTwinkle: { value: motes.twinkle ?? 0 },
+          uColor: { value: new THREE.Color(motes.color) },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    [motes],
   )
+  useEffect(() => () => (geo.dispose(), mat.dispose()), [geo, mat])
+  useFrame(({ clock, gl }) => {
+    mat.uniforms.uTime.value = reduce ? 0 : clock.elapsedTime
+    mat.uniforms.uScale.value = gl.domElement.height / 2 // same size rule as PointsMaterial
+  })
+  return <points geometry={geo} material={mat} frustumCulled={false} />
 }
 
 export default function LobbyBackdrop({ themeId }) {
   const theme = themeFor(themeId)
-  const sky = theme.sky()
   return (
     <>
-      <primitive attach="background" object={sky} />
+      <SkyLayers themeId={themeId} />
       <fog attach="fog" args={[theme.fog.color, theme.fog.near, theme.fog.far]} />
       <Floor floor={theme.floor} />
 

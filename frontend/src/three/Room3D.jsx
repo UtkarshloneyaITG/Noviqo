@@ -11,7 +11,8 @@
 import { useEffect, useMemo } from 'react'
 import { Sparkles } from '@react-three/drei'
 import * as THREE from 'three'
-import { skyTexture, gridTexture, glowTexture, PALETTE } from './world/sky'
+import { gridTexture, glowTexture, PALETTE } from './world/sky'
+import { flatSkyTexture } from './world/themes'
 import { FLOOR_Y } from './layout'
 
 // The skyline arc: centred on the table, behind it, wide enough to cover the
@@ -26,7 +27,7 @@ const SKY_Y = HORIZON_Y + SKY_H * (0.5 - 0.4533) // 0.4533 = horizon height in t
 
 function Skyline() {
   const map = useMemo(() => {
-    const t = skyTexture().clone()
+    const t = flatSkyTexture().clone()
     t.wrapS = THREE.RepeatWrapping
     t.repeat.x = 2
     t.offset.x = 0.5 // one copy's centre (the sun) straight behind the table

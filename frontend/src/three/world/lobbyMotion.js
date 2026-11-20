@@ -121,7 +121,8 @@ function relax(s, p) {
 const IN = 0.2 // seconds to blend into an emote…
 const OUT = 0.35 // …and back to the idle
 // Bones moved here that applyIdle doesn't reset; put back to the stance every frame.
-const EXTRA = ['abdomen', 'torso', 'shoulderl', 'shoulderr', 'lowerarml', 'lowerarmr', 'handl', 'handr']
+const EXTRA = ['abdomen', 'torso', 'shoulderl', 'shoulderr', 'lowerarml', 'lowerarmr', 'handl', 'handr',
+  'hips', 'upperlegl', 'upperlegr', 'lowerlegl', 'lowerlegr', 'footl', 'footr'] // legs: entrances crouch and step
 const AXES = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) }
 const rootQ = new THREE.Quaternion()
 const q0 = new THREE.Quaternion()
@@ -165,14 +166,20 @@ function setup({ root, bones }) {
  * One frame of a standing lobby figure: idle at time `t` (seconds; pass a
  * constant to hold still), plus `emote` ({ id, at: performance.now() when it
  * arrived }) if one is playing at `now`. Returns how far to lift the figure.
+ * `entrance` (optional) is a pose function (see three/world/Entrance.jsx): while
+ * it's given it owns the body and emotes wait.
  */
-export function animateFigure(model, t, phase, emote, now) {
+export function animateFigure(model, t, phase, emote, now, entrance) {
   const st = (model.lobby ??= setup(model))
   for (const [bone, q] of st.rest) bone.quaternion.copy(q)
   applyIdle(model, t, phase)
   model.root.getWorldQuaternion(rootQ)
   Object.assign(ctx, { model, side: st.side, w: 1, lift: 0 })
   relax(t + phase, ctx)
+  if (entrance) {
+    entrance(ctx)
+    return ctx.lift
+  }
 
   const def = emote && LOBBY_EMOTES[emote.id]
   const e = def ? (now - emote.at) / 1000 : Infinity
