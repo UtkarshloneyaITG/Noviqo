@@ -171,7 +171,6 @@ function front(g, rand, add) {
   palm(g, rand, 1545, 905, -120, 640, 1.05)
 }
 
-/** The same scene with no motion, for the baked thumbnail (the shader adds nothing the painting lacks). */
 export default {
   seed: 21,
   band: [110, 900],

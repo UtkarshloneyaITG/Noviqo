@@ -20,10 +20,12 @@ const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced
 
 function texture(canvas, alpha = false, repeat = false) {
   const t = new THREE.CanvasTexture(canvas)
-  t.colorSpace = THREE.SRGBColorSpace
+  // Opaque back: decoded to linear by the GPU. Transparent layers: raw premultiplied
+  // sRGB bytes (clean filtered edges), blended in sRGB space by the shader's over().
+  t.colorSpace = alpha ? THREE.NoColorSpace : THREE.SRGBColorSpace
   t.generateMipmaps = false // drawn about 1:1, mipmaps would only cost memory
   t.minFilter = THREE.LinearFilter
-  t.premultiplyAlpha = alpha // filtered edges stay clean
+  t.premultiplyAlpha = alpha
   if (repeat) t.wrapS = THREE.RepeatWrapping // mid layers scroll and wrap
   return t
 }

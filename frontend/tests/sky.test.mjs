@@ -1,4 +1,4 @@
-// node --test frontend/tests/  (no deps: node's built-in runner)
+// cd frontend && node --test "tests/*.test.mjs"  (no deps: node's built-in runner)
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { fitUniform } from '../src/three/world/skyShader.js'
@@ -27,4 +27,9 @@ test('paint width follows the screen, capped at 1.5x density, in 320 px steps', 
   assert.equal(paintWidth(2560, 1440, 2), 2560) // capped
   assert.equal(paintWidth(412, 915, 2.625), 1600) // phone, either orientation
   assert.equal(paintWidth(800, 600, 1), 1280) // floor
+})
+
+test('the moon path on the water never raises a signed distance to a power (pow(x<0) is NaN on some GPUs)', async () => {
+  const { SKY_FRAG } = await import('../src/three/world/skyShader.js')
+  assert.doesNotMatch(SKY_FRAG, /pow\(\s*\(p\.x - uMoonX\)/)
 })

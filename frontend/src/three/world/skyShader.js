@@ -59,6 +59,12 @@ uniform sampler2D tFront;
 uniform vec2 uBand;
 #endif
 ${NOISE}
+// The mid/front layers arrive as raw premultiplied sRGB bytes; blending them
+// in sRGB space, like the canvas does, keeps the live look identical to the
+// baked thumbnails and the table skyline.
+vec3 toSRGB(vec3 c) { c = max(c, 0.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+vec3 toLinear(vec3 c) { return mix(c / 12.92, pow((max(c, 0.0) + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 over(vec3 col, vec4 layer) { return layer.a > 0.0 ? toLinear(toSRGB(col) * (1.0 - layer.a) + layer.rgb) : col; }
 #ifdef SUN
 uniform vec3 uSun; // centre x, y (logical px, y down), radius
 // A retro sun: yellow to hot pink, the lower half cut by stripes that widen
@@ -117,7 +123,8 @@ vec3 planet(vec3 col, vec2 p) {
 uniform float uMoonX;
 // Moonlight on the sea: glints along the moon's path, faint crests rolling in.
 vec3 water(vec2 p, float depth) {
-  float path = exp(-pow((p.x - uMoonX) / (24.0 + depth * 300.0), 2.0));
+  float dx = (p.x - uMoonX) / (24.0 + depth * 300.0);
+  float path = exp(-dx * dx);                         // not pow(): undefined for a negative base
   float n = noise(vec2(p.x * 0.05 + uTime * 0.3, p.y * 0.5 - uTime * 1.4));
   float glint = pow(n, 9.0) * 5.0 * path * (1.0 - 0.5 * depth);
   float crest = pow(max(0.0, sin(830.0 / (p.y - 478.0) + uTime * 0.7)), 30.0)
@@ -175,10 +182,10 @@ void main() {
   #endif
   vec4 m = texture2D(tMid, mu);
   #ifdef MID_RIPPLE
-  // brightness rolls across the sky; the colours drift toward pink and back
+  // brightness rolls across the sky; the colours drift a little and back
   m.rgb = mix(m.rgb, m.gbr, 0.1 + 0.1 * sin(uTime * 0.15 + uv.x * 3.0)) * (0.75 + 0.5 * noise(vec2(uv.x * 6.0 - uTime * 0.15, uTime * 0.1)));
   #endif
-  col = col * (1.0 - m.a) + m.rgb;                   // premultiplied
+  col = over(col, m);
 #endif
 
 #ifdef STREAKS
@@ -193,7 +200,7 @@ void main() {
     fu.x += sin(uTime * 0.9 + uv.x * 2.0) * 0.008 * sw * sw + sin(uTime * 2.1 + uv.y * 9.0) * 0.0015 * sw;
   #endif
     vec4 f = texture2D(tFront, fu);
-    col = col * (1.0 - f.a) + f.rgb;
+    col = over(col, f);
   }
 #endif
 
@@ -264,7 +271,7 @@ uniform vec3 uColor;
 varying float vA;
 void main() {
   float a = smoothstep(0.5, 0.0, length(gl_PointCoord - 0.5)) * vA;
-  gl_FragColor = vec4(uColor * a, a);
+  gl_FragColor = vec4(uColor, a); // additive blending multiplies by alpha once
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`
