@@ -75,6 +75,7 @@ export function stamp(g, s, op = 'source-over', filter = 'none') {
   g.filter = filter === 'none' ? 'none' : filter.replace(/(\d+(\.\d+)?)px/g, (_, n) => `${n * (g.canvas.width / W)}px`)
   g.drawImage(s.canvas, 0, 0)
   g.restore()
+  s.canvas.width = s.canvas.height = 0 // free it now: iOS caps total canvas memory and GC is lazy
 }
 
 /** Device px wide to paint at: the screen's long side at up to 1.5x density, 1280–2560 in 320 px steps. */
@@ -99,19 +100,20 @@ function linear(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => toLinear(v / 255))
 }
 
+/** Lights painted with the sky (back) can hide behind silhouettes; lights painted on the front layer (windows, lanterns) sit on top of it. */
 function collect(rand) {
   const list = []
-  const add = (x, y, size, color, mode, phase = rand()) => list.push({ x, y, size, color, mode, phase })
-  return [list, add]
+  const adder = (onFront) => (x, y, size, color, mode, phase = rand()) => list.push({ x, y, size, color, mode, phase, onFront })
+  return [list, adder(false), adder(true)]
 }
 
 /**
- * Paint a scene for the live backdrop. Stars hidden behind the front layer
+ * Paint a scene for the live backdrop. Sky lights hidden behind the front layer
  * (or within 12 px of it, so swaying silhouettes don't uncover them) are dropped.
  */
 export function paintScene(scene, width) {
   const rand = rng(scene.seed)
-  const [list, add] = collect(rand)
+  const [list, add, addFront] = collect(rand)
   const back = layer(width, scene.backScale ?? 1)
   scene.back(back, rand, add)
   let mid = null
@@ -123,7 +125,7 @@ export function paintScene(scene, width) {
   const [y0, y1] = scene.band ?? [0, H]
   if (scene.front) {
     front = layer(width, 1, y0, y1)
-    scene.front(front, rand, add)
+    scene.front(front, rand, addFront)
   }
 
   let keep = list
@@ -135,7 +137,7 @@ export function paintScene(scene, width) {
       const py = Math.round((y - y0) * k)
       return px >= 0 && py >= 0 && px < fw && py < fh && data[(py * fw + px) * 4 + 3] > 25
     }
-    keep = list.filter((l) => l.mode !== STAR || ![[0, 0], [12, 0], [-12, 0], [0, 12], [0, -12]].some(([dx, dy]) => solid(l.x + dx, l.y + dy)))
+    keep = list.filter((l) => l.onFront || ![[0, 0], [12, 0], [-12, 0], [0, 12], [0, -12]].some(([dx, dy]) => solid(l.x + dx, l.y + dy)))
   }
 
   const pos = new Float32Array(keep.length * 3)
@@ -158,7 +160,7 @@ export function paintScene(scene, width) {
 /** The whole scene baked into one still picture `width` px wide (thumbnails, the table skyline). */
 export function flatCanvas(scene, width) {
   const rand = rng(scene.seed)
-  const [list, add] = collect(rand)
+  const [list, add, addFront] = collect(rand)
   const g = layer(width, 1)
   // Paint each layer on its own canvas so the order matches the live backdrop.
   scene.back(g, rand, add)
@@ -169,7 +171,7 @@ export function flatCanvas(scene, width) {
     stamp(g, m)
   }
   const f = scene.front && scratch(g)
-  if (f) scene.front(f, rand, add)
+  if (f) scene.front(f, rand, addFront)
   const dots = (lights) => {
     for (const l of lights) {
       g.fillStyle = l.color
@@ -184,8 +186,8 @@ export function flatCanvas(scene, width) {
       g.globalAlpha = 1
     }
   }
-  dots(list.filter((l) => l.mode === STAR)) // stars behind the silhouettes…
+  dots(list.filter((l) => !l.onFront)) // sky lights behind the silhouettes…
   if (f) stamp(g, f)
-  dots(list.filter((l) => l.mode !== STAR)) // …windows and blinkers on them
+  dots(list.filter((l) => l.onFront)) // …windows, lanterns and blinkers on them
   return g.canvas
 }

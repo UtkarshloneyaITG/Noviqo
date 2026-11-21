@@ -64,6 +64,19 @@ export const LOBBY_EMOTES = {
       p.arm('r', [0.15, -0.9, 0.35], [-0.6, 1, 0.08]) // knuckles under the chin
     },
   },
+  shrug: {
+    name: 'Shrug', icon: '🤷', secs: 2,
+    pose(t, p) {
+      const bob = 0.75 + 0.25 * Math.sin(t * 11) // a little double-shrug bounce
+      for (const s of 'lr') {
+        p.bend('shoulder' + s, 'z', p.side[s] * 0.22 * bob) // shoulders up to the ears
+        p.arm(s, [0.22, -0.95, 0.12], [0.62, 0.18, 0.75]) // elbows tucked in, forearms forward and out, palms up
+      }
+      p.bend('head', 'z', 0.14)
+      p.bend('head', 'x', -0.06)
+      p.bend('chest', 'x', -0.04)
+    },
+  },
   dance: {
     name: 'Dance', icon: '🕺', secs: 3.2,
     pose(t, p) {

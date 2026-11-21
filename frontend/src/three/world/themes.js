@@ -14,6 +14,7 @@ import synthwave from './scenes/synthwave'
 import beach from './scenes/beach'
 import aurora from './scenes/aurora'
 import station from './scenes/station'
+import sakura from './scenes/sakura'
 
 const cache = new Map()
 
@@ -103,6 +104,30 @@ function deckFloor() {
   return done(c, 10)
 }
 
+/** Stone courtyard slabs with a few fallen petals. */
+function courtyardFloor() {
+  const [c, g] = canvas(256, 256)
+  const rand = rng(14)
+  g.fillStyle = '#2c2430'
+  g.fillRect(0, 0, 256, 256)
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 4; x++) {
+      const v = 92 + Math.floor(rand() * 18)
+      g.fillStyle = `rgb(${v},${v - 8},${v + 4})`
+      g.fillRect(x * 64 + 2, y * 64 + 2, 60, 60)
+      g.fillStyle = 'rgba(255,255,255,.04)'
+      g.fillRect(x * 64 + 2, y * 64 + 2, 60, 2)
+    }
+  }
+  for (let i = 0; i < 22; i++) {
+    g.fillStyle = `rgba(255,${170 + rand() * 40},${200 + rand() * 30},.85)`
+    g.beginPath()
+    g.ellipse(rand() * 256, rand() * 256, 2.6, 1.5, rand() * Math.PI, 0, Math.PI * 2)
+    g.fill()
+  }
+  return done(c, 16)
+}
+
 // ── registry ─────────────────────────────────────────────────────────────
 // floor: `scroll` = texture repeats per second toward the camera; `pulse` = edge glow breathes.
 // motes: `twinkle` 0..1 fades each one in and out; `drift` = metres of sideways sway.
@@ -168,6 +193,18 @@ export const THEMES = {
     rimRight: ['#ff9a4d', 2.4],
     front: ['#9fb0ff', 0.5],
     motes: { color: '#9fe6ff', size: 0.05, speed: 0.03, count: 90 },
+  },
+  'lobby:sakura': {
+    name: 'Sakura dawn',
+    scene: sakura,
+    fog: { color: '#a5788f', near: 8, far: 24 },
+    floor: { map: () => once('courtyard-floor', courtyardFloor), size: 80, roughness: 0.8, metalness: 0.05 },
+    hemi: ['#ffd9ea', '#2a2040', 0.8],
+    key: ['#ffd6b8', 2.0],
+    rimLeft: ['#ff8fc4', 2.3],
+    rimRight: ['#9fc4ff', 1.9],
+    front: ['#ffe4d6', 0.5],
+    motes: { color: '#ffc0da', size: 0.1, speed: -0.22, count: 150, drift: 0.45, twinkle: 0.25 }, // falling petals
   },
 }
 

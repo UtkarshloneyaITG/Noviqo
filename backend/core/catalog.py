@@ -50,7 +50,8 @@ ITEMS: List[dict] = (
     + [_item("emotes:basic", "emotes", "Basic emotes"), _item("emotes:party", "emotes", "Party emotes")]
     + [_item("lobby:rooftop", "lobby", "Rooftop dusk"), _item("lobby:synthwave", "lobby", "Synthwave", 300),
        _item("lobby:beach", "lobby", "Moonlit beach", 300), _item("lobby:aurora", "lobby", "Aurora peaks", 400),
-       _item("lobby:station", "lobby", "Orbital station", 500)]
+       _item("lobby:station", "lobby", "Orbital station", 500),
+       _item("lobby:sakura", "lobby", "Sakura dawn", 450)]
     # How your character appears on its lobby pedestal (frontend: three/world/entrances.js)
     + [_item("entry:classic", "entry", "Classic"), _item("entry:skydrop", "entry", "Sky drop", 300),
        _item("entry:teleport", "entry", "Teleport", 300), _item("entry:rise", "entry", "Rising platform", 300),
@@ -65,7 +66,7 @@ SLOT_OF_KIND = {"character": "character", "card_back": "card_back", "felt": "fel
 
 # Lobby emotes (your character acts them out on its pedestal) → the emote pack that unlocks each.
 LOBBY_EMOTES: Dict[str, str] = {
-    **dict.fromkeys(["wave", "cheer", "thumbs_up", "clap", "laugh", "think"], "emotes:basic"),
+    **dict.fromkeys(["wave", "cheer", "thumbs_up", "clap", "laugh", "think", "shrug"], "emotes:basic"),
     **dict.fromkeys(["dance", "salute", "bow", "flex"], "emotes:party"),
 }
 DEFAULT_EQUIPPED = {"character": "char:m-Casual", "card_back": "back:classic", "felt": "felt:green", "lobby": "lobby:rooftop",

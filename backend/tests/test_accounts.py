@@ -281,9 +281,9 @@ class TestRewards:
 # ── lobby backgrounds ────────────────────────────────────────────────────
 
 class TestLobbyBackgrounds:
-    def test_five_backgrounds_rooftop_free(self):
+    def test_backgrounds_rooftop_free_rest_priced(self):
         lobbies = {i["id"]: i for i in catalog.ITEMS if i["kind"] == "lobby"}
-        assert set(lobbies) == {"lobby:rooftop", "lobby:synthwave", "lobby:beach", "lobby:aurora", "lobby:station"}
+        assert set(lobbies) == {"lobby:rooftop", "lobby:synthwave", "lobby:beach", "lobby:aurora", "lobby:station", "lobby:sakura"}
         assert lobbies["lobby:rooftop"]["starter"]
         assert all(i["price"] for k, i in lobbies.items() if k != "lobby:rooftop")
 

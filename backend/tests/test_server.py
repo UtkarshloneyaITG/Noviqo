@@ -438,6 +438,14 @@ def test_party_emotes_need_their_pack(client):
         assert recv(a, "emote")["emote"] == "dance"
 
 
+def test_shrug_is_a_basic_emote_everyone_has(client):
+    with client.websocket_connect("/ws") as a:
+        signup(a)
+        assert {"id": "shrug", "pack": "emotes:basic"} in recv(a, "catalog")["emotes"]
+        a.send_json({"type": "emote", "emote": "shrug"})
+        assert recv(a, "emote")["emote"] == "shrug"
+
+
 def test_unknown_emotes_and_floods_are_refused(client):
     with client.websocket_connect("/ws") as a:
         signup(a)
