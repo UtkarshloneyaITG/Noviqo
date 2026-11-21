@@ -15,6 +15,7 @@ import * as THREE from 'three'
 import { paintScene, paintWidth } from './paint'
 import { fitUniform, SKY_VERT, SKY_FRAG, LIGHTS_VERT, LIGHTS_FRAG } from './skyShader'
 import { themeFor } from './themes'
+import { stillBackgrounds } from '../../store/display'
 
 const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -92,7 +93,7 @@ export default function SkyLayers({ themeId }) {
 
   useFrame(({ clock, size, gl }) => {
     const u = mats.shared
-    u.uTime.value = reduce ? 0 : clock.elapsedTime
+    u.uTime.value = reduce || stillBackgrounds() ? 0 : clock.elapsedTime // reduced motion or Low graphics: hold still
     const f = fitUniform(size.width, size.height)
     u.uFit.value.set(...f)
     u.uPx.value = gl.domElement.height / (900 * f[3]) // device px per logical px

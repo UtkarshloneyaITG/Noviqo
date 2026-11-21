@@ -24,6 +24,7 @@ import ColorPicker from './components/ColorPicker'
 import Summary from './components/Summary'
 import PythonDocs from './components/PythonDocs'
 import RolesHud from './roles/RolesHud'
+import { useDisplay } from './store/display'
 
 // Hold the Game Over modal back briefly so the in-scene 3D win moment
 // (confetti over the table) reads first.
@@ -43,6 +44,7 @@ export default function App() {
   const showColorPicker = useAppStore((s) => s.showColorPicker)
   const error = useAppStore((s) => s.error)
   const notification = useAppStore((s) => s.notification)
+  const showFps = useDisplay((s) => s.showFps)
 
   const isFinished = status === 'finished'
   const inGame = status === 'playing' || isFinished
@@ -82,6 +84,8 @@ export default function App() {
       <div className="canvas-root">
         <Experience />
       </div>
+      {/* Settings → Graphics → Show FPS; Experience's FpsProbe writes the number. */}
+      {showFps && <div id="nq-fps" className="fps-badge" aria-hidden="true" />}
 
       {/* Phones play sideways; CSS shows this only on narrow portrait screens. */}
       <div className="rotate-hint">

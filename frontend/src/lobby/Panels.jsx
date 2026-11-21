@@ -4,6 +4,7 @@
  */
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
+import { useDisplay } from '../store/display'
 import { Coin, GameArt, RolesArt, ItemArt, Modal, USERNAME_RE, normalizeUsername, useItemMap } from './ui'
 
 const KINDS = [
@@ -189,6 +190,44 @@ export function Milestones({ onClose }) {
   )
 }
 
+const QUALITY_OPTIONS = [['auto', 'Auto'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']]
+const QUALITY_HINTS = {
+  auto: 'Adjusts itself to your device.',
+  high: 'Sharpest picture, with glow and shadows.',
+  medium: 'Normal resolution, with glow and shadows.',
+  low: 'Best for older phones and battery: no glow or shadows, still backgrounds.',
+}
+const FPS_OPTIONS = [[30, '30'], [60, '60'], [0, 'Unlimited']]
+
+/** A row of mutually exclusive buttons (the lobby's segmented control). */
+function Choice({ label, hint, options, value, onPick }) {
+  return (
+    <div className="lb-field" role="group" aria-label={label}>
+      <span>{label}</span>
+      <div className="lb-seg">
+        {options.map(([v, text]) => (
+          <button key={text} type="button" className={v === value ? 'act' : ''} aria-pressed={v === value} onClick={() => onPick(v)}>
+            {text}
+          </button>
+        ))}
+      </div>
+      {hint && <small className="lb-hint">{hint}</small>}
+    </div>
+  )
+}
+
+/** Graphics and frame-rate settings, saved on this device (store/display.js). */
+function Graphics() {
+  const { quality, fps, showFps, setDisplay } = useDisplay()
+  return (
+    <section className="lb-gfx" aria-label="Graphics">
+      <Choice label="Graphics quality" hint={QUALITY_HINTS[quality]} options={QUALITY_OPTIONS} value={quality} onPick={(q) => setDisplay({ quality: q })} />
+      <Choice label="Frame-rate limit" hint={fps ? `Never above ${fps} frames a second.` : "As fast as your screen allows."} options={FPS_OPTIONS} value={fps} onPick={(f) => setDisplay({ fps: f })} />
+      <Choice label="Show FPS" options={[[false, 'Off'], [true, 'On']]} value={showFps} onPick={(v) => setDisplay({ showFps: v })} />
+    </section>
+  )
+}
+
 export function Settings({ onClose }) {
   const profile = useAppStore((s) => s.profile)
   const { send, signOut } = useAppStore.getState()
@@ -204,6 +243,7 @@ export function Settings({ onClose }) {
 
   return (
     <Modal title="Settings" onClose={onClose}>
+      <Graphics />
       <form className="lb-addf" onSubmit={save}>
         <label className="lb-field">
           <span>In-game name</span>

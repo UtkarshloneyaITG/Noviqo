@@ -451,3 +451,7 @@
 .lb-art--entry .lb-ic { width: 44px; height: 44px; color: var(--cyan); stroke-width: 2.2; }
 .lb-item.locked .lb-art--entry { opacity: .75; filter: none; }   /* previewable, so not greyed out */
 .lb-preview { font-size: 12px; }
+
+/* Settings → Graphics, and the FPS badge it can turn on (App.jsx) */
+.lb-gfx { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.fps-badge { position: fixed; top: 6px; left: 8px; z-index: 60; padding: 4px 7px; border-radius: 4px; font: 700 12px/1 ui-monospace, Menlo, Consolas, monospace; color: #9ff4ff; background: rgba(4,8,20,.65); pointer-events: none; }

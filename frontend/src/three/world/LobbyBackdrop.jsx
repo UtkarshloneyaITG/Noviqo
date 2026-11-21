@@ -15,6 +15,7 @@ import * as THREE from 'three'
 import { themeFor } from './themes'
 import { MOTES_VERT, MOTES_FRAG } from './skyShader'
 import SkyLayers from './SkyLayers'
+import { useDisplay, stillBackgrounds, QUALITY } from '../../store/display'
 
 const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -24,7 +25,7 @@ function Floor({ floor }) {
   const edge = useRef()
   const edgeColor = useMemo(() => new THREE.Color(floor.edge ?? '#000'), [floor.edge])
   useFrame(({ clock }) => {
-    if (reduce) return
+    if (reduce || stillBackgrounds()) return
     if (floor.scroll) map.offset.y = (clock.elapsedTime * floor.scroll) % 1 // toward the camera
     if (floor.pulse && edge.current) edge.current.color.copy(edgeColor).multiplyScalar(1.6 + 0.6 * Math.sin(clock.elapsedTime * 2))
   })
@@ -48,7 +49,8 @@ function Floor({ floor }) {
 
 /** Drifting particles, moved entirely on the GPU: no per-frame buffer upload. */
 function Motes({ motes }) {
-  const { count } = motes
+  const scale = useDisplay((s) => QUALITY[s.quality]?.particles ?? 1) // Low graphics: half as many
+  const count = Math.max(1, Math.round(motes.count * scale))
   const geo = useMemo(() => {
     const p = new Float32Array(count * 3)
     const phase = new Float32Array(count)
@@ -85,7 +87,7 @@ function Motes({ motes }) {
   )
   useEffect(() => () => (geo.dispose(), mat.dispose()), [geo, mat])
   useFrame(({ clock, gl }) => {
-    mat.uniforms.uTime.value = reduce ? 0 : clock.elapsedTime
+    mat.uniforms.uTime.value = reduce || stillBackgrounds() ? 0 : clock.elapsedTime
     mat.uniforms.uScale.value = gl.domElement.height / 2 // same size rule as PointsMaterial
   })
   return <points geometry={geo} material={mat} frustumCulled={false} />
