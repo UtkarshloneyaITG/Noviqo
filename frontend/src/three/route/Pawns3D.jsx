@@ -101,7 +101,7 @@ export default function Pawns3D({ st, turns, onPick }) {
     const fresh = seen.current == null ? [] : st.events.filter((e) => e.seq > seen.current)
     const gap = fresh.length > 0 && fresh[0].seq > (seen.current ?? 0) + 1
     seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
-    if (reduce || gap) return
+    if (gap) return
     let landing = 0 // how long the last mover takes to set down: its victims fly home after that
     for (const e of fresh) {
       const rig = rigs.current[`${e.seat}:${e.pawn}`]

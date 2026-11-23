@@ -11,12 +11,13 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { FELT_TOP } from './Board3D'
 import { glowTexture } from '../world/sky'
+import { stillBackgrounds } from '../../store/display'
 import { acts, THROW_S } from './acts'
 
 const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 const FLY_S = THROW_S - 0.2
 const SPOTS = [[0, 0], [0.32, -0.18], [-0.05, 0.33], [0.3, 0.25]] // where they settle
-const TRAY = new THREE.Vector3(3.1, FELT_TOP, 2.75) // the table's near-right corner, clear of the board and every tray
+const TRAY = new THREE.Vector3(2.05, FELT_TOP, 3.35) // in front of you, right of your pawn tray (in view even on 4:3)
 const SIZE = 1.45
 const DOME_H = 0.15 * SIZE
 const IN_HAND = [[0, 0, 0], [0.07, 0.02, 0.05], [-0.06, 0.03, 0.04], [0.02, 0.05, -0.06]] // clustered in a palm
@@ -42,6 +43,7 @@ function Shell({ shellRef }) {
 }
 
 const hand = new THREE.Vector3()
+const hand2 = new THREE.Vector3()
 
 export default function Shells3D({ st }) {
   const refs = useRef([])
@@ -63,7 +65,7 @@ export default function Shells3D({ st }) {
     seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
     const last = fresh[fresh.length - 1] || (fly.current ? null : st.events.filter((e) => e.kind === 'throw').pop())
     if (!last) return
-    acts.toss[last.seat] = { phase: 'fling', since: performance.now() / 1000 }
+    if (fresh.length) acts.toss[last.seat] = { phase: 'fling', since: performance.now() / 1000 } // not on mount: no phantom fling
     fly.current = {
       t: fresh.length && !reduce ? 0 : 1,
       faces: last.faces,
@@ -81,13 +83,15 @@ export default function Shells3D({ st }) {
       const h = acts.hands[holder]
       const anchor = h?.anchor(hand)
       if (anchor) {
-        const k = h.scale ?? 1 // your first-person hand is small and close: smaller shells
+        const k = h.scale ?? 1 // your first-person hand is close to your eye: smaller shells
+        const ease = Math.min(1, dt * 10) // gathered into the hand, never snapped
+        const calm = reduce || stillBackgrounds()
         refs.current.forEach((g, i) => {
           if (!g) return
           const [x, y, z] = IN_HAND[i]
-          g.scale.setScalar(SIZE * k)
-          g.position.set(anchor.x + x * k, anchor.y + y * k, anchor.z + z * k)
-          g.rotation.set(clock.elapsedTime * 2 + i, i, 0)
+          g.scale.setScalar(g.scale.x + (SIZE * k - g.scale.x) * ease)
+          g.position.lerp(hand2.set(anchor.x + x * k, anchor.y + y * k, anchor.z + z * k), ease)
+          g.rotation.set(calm ? 0 : clock.elapsedTime * 2 + i, i, 0)
         })
         if (glow.current) glow.current.material.opacity = 0
         return

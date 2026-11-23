@@ -109,7 +109,13 @@ function Figure({ character, offline, count, back, phase, playerId, reach }) {
 
   // Where this player is looking (from their camera), eased so it never snaps.
   const look = useRef({ yaw: 0, pitch: 0 })
+  // applyIdle doesn't reset the forearm or hand; a reaching arm must start from rest each frame
+  const armRest = useMemo(
+    () => ['lowerarmr', 'handr'].filter((k) => model.bones[k]).map((k) => [model.bones[k], model.bones[k].quaternion.clone()]),
+    [model],
+  )
   useFrame((s, dt) => {
+    if (reach) for (const [bone, q] of armRest) bone.quaternion.copy(q)
     applyIdle(model, REDUCED ? 0 : s.clock.elapsedTime, phase, offline ? 0 : 1)
     const want = (!offline && looks[playerId]) || ZERO_LOOK
     const k = Math.min(1, dt * 8)

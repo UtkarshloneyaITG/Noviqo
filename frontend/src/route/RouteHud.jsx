@@ -61,15 +61,17 @@ function moveLabel(m) {
 /** A big banner for each new throw: the value, Chowka / Baara, and whether it earns another. */
 function ThrowBanner({ st }) {
   const seen = useRef(null)
+  const timer = useRef(null)
   const [shown, setShown] = useState(null)
+  useEffect(() => () => clearTimeout(timer.current), [])
   useEffect(() => {
     const fresh = seen.current == null ? [] : st.events.filter((e) => e.seq > seen.current && e.kind === 'throw')
     seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
     const t = fresh[fresh.length - 1]
     if (!t) return
     setShown({ ...t, key: t.seq })
-    const id = setTimeout(() => setShown(null), 1400)
-    return () => clearTimeout(id)
+    clearTimeout(timer.current) // only a newer banner (or leaving) cuts this one short
+    timer.current = setTimeout(() => setShown(null), 1400)
   }, [st])
   if (!shown) return null
   const who = st.seats.find((s) => s.id === shown.seat)
@@ -99,7 +101,7 @@ function Prompt({ st, me }) {
       <i className="rt-dot" style={{ background: COLOUR_HEX[seat.colour] }} aria-hidden="true" />
       <b>{text}</b>
       {mine && st.deadline && st.phase !== 'over' && (
-        <span className="rt-clock">
+        <span className="rt-clock" aria-hidden="true">
           <SecondsLeft until={st.deadline} />s
         </span>
       )}
@@ -209,7 +211,8 @@ export default function RouteHud() {
       setHolding(false)
       return
     }
-    const typing = (e) => e.target.closest?.('input, textarea')
+    // keys typed into a field, or pressed on another button (Got it, Leave, Stay…), are theirs
+    const typing = (e) => e.target.closest?.('input, textarea, button:not(.rt-throwbtn)')
     const down = (e) => {
       if (typing(e) || e.repeat) return
       if (e.key === ' ') (e.preventDefault(), (acts.localHold = true), setHolding(true))
@@ -267,7 +270,8 @@ export default function RouteHud() {
             onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), hold(true))}
             onPointerUp={() => hold(false)}
             onPointerCancel={() => ((acts.localHold = false), setHolding(false))}
-            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), routeThrow())}
+            onLostPointerCapture={() => acts.localHold && hold(false)}
+            onClick={(e) => e.detail === 0 && !acts.localHold && routeThrow()} // screen readers, switch and voice control send only clicks
             aria-label="Throw the shells: hold to shake, release to throw"
           >
             <span>{holding ? 'Shaking… let go!' : 'Throw'}</span>

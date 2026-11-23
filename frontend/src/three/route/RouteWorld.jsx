@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo } from 'react'
 import { Html } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useAppStore } from '../../store/appStore'
 import Room3D from '../Room3D'
@@ -21,7 +21,7 @@ import Table3D from '../Table3D'
 import LookControls from '../LookControls'
 import Avatar3D from '../Avatar3D'
 import { HORIZON_FOG } from '../world/sky'
-import { FIGURE_H, FLOOR_Y, SEAT_RADIUS, TABLE_RADIUS } from '../layout'
+import { SEAT_RADIUS, TABLE_RADIUS, TABLE_TOP_Y } from '../layout'
 import { pathFor, rotate, viewTurns } from '../../route/info'
 import SeatCard from '../../route/SeatCard'
 import Board3D, { BOARD_TOP } from './Board3D'
@@ -29,6 +29,7 @@ import Pawns3D from './Pawns3D'
 import Shells3D from './Shells3D'
 import FirstPersonArm from './FirstPersonArm'
 import { acts } from './acts'
+import { stillBackgrounds } from '../../store/display'
 import '../../styles/route.css'
 
 const HUE = { red: 0, blue: 210, green: 140, yellow: 45 } // chair colours matching the seat colours
@@ -37,6 +38,9 @@ const GRIP = new THREE.Vector3(0, 0.45, 0) // the hand hovers this far above a p
 const PALM = new THREE.Vector3(0, -0.12, 0) // from the wrist bone to the palm
 const CENTRE = new THREE.Vector3(0, BOARD_TOP + 0.5, 0)
 const FLING_S = 0.45
+// Your eyes: pulled in close to the table (the other games sit further back, at [0, 4.6, 10]).
+const EYE = [0, 3.9, 7.4]
+const LOOK_AT = [0, 0.7, 0.6]
 
 /** A seat's place round the table: behind its home square, as you see the board. */
 function seatSpot(seatIndex, turns) {
@@ -68,7 +72,7 @@ function Seated({ s, spot, acting }) {
       want = 1
     } else if (toss?.phase === 'hold') {
       reach.target.copy(holdAt) // shells cupped over the table edge, shaken while they decide
-      if (!reduce) reach.target.y += Math.sin(clock.elapsedTime * 22) * 0.09
+      if (!reduce && !stillBackgrounds()) reach.target.y += Math.sin(clock.elapsedTime * 22) * 0.09
       want = 1
     } else if (toss?.phase === 'fling' && age < FLING_S) {
       const k = age / FLING_S // the arm whips toward the board
@@ -82,7 +86,8 @@ function Seated({ s, spot, acting }) {
     <group>
       <Avatar3D seat={spot} hue={HUE[s.colour]} active={acting} offline={!s.connected || s.left} count={0}
         character={s.character} playerId={s.id} reach={reach} />
-      <Html position={[spot.x, FLOOR_Y + FIGURE_H * 0.7, spot.z]} center zIndexRange={[5, 0]}>
+      {/* a name plate on the table in front of them: always in view, never over a face */}
+      <Html position={[spot.x * 0.76, TABLE_TOP_Y + 1.0, spot.z * 0.76]} center zIndexRange={[5, 0]}>
         <SeatCard seat={s} acting={acting} />
       </Html>
     </group>
@@ -92,6 +97,12 @@ function Seated({ s, spot, acting }) {
 export default function RouteWorld() {
   const st = useAppStore((s) => s.routeState)
   const routeMove = useAppStore((s) => s.routeMove)
+  // Narrower than 16:9 (tablets, 4:3): ease back so the side players stay in view.
+  const aspect = useThree((s) => s.size.width / s.size.height)
+  const eye = useMemo(() => {
+    const k = Math.min(1.35, Math.max(1, 16 / 9 / aspect))
+    return EYE.map((v, i) => LOOK_AT[i] + (v - LOOK_AT[i]) * k)
+  }, [aspect])
   if (!st) return null
   const turns = viewTurns(st.you)
 
@@ -99,7 +110,7 @@ export default function RouteWorld() {
     <>
       <color attach="background" args={['#080a24']} />
       <fog attach="fog" args={[HORIZON_FOG, 22, 52]} />
-      <LookControls position={[0, 4.6, 10]} lookAt={[0, 1.1, 1]} />
+      <LookControls key={eye.join()} position={eye} lookAt={LOOK_AT} />
       <Room3D />
       <Table3D />
       <Board3D turns={turns} />
