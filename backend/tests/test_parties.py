@@ -109,6 +109,20 @@ class TestParties:
         with pytest.raises(PartyError, match="games on offer"):
             pt.configure("a", {"game": "chess"})
 
+    def test_route_is_a_party_game_for_one_to_four(self, pt):
+        solo(pt, "a", *"bcde")
+        pt.configure("a", {"game": "route"})
+        assert pt.check_start("a").game == "route" and pt.of("a").route_rules == "traditional"
+        pt.configure("a", {"route_rules": "basic"})
+        assert pt.of("a").route_rules == "basic"
+        with pytest.raises(PartyError, match="Traditional or Basic"):
+            pt.configure("a", {"route_rules": "chaos"})
+        for x in "bcde":
+            pt.accept(x, pt.invite("a", x))
+            pt.set_ready(x, True)
+        with pytest.raises(PartyError, match="seats 4"):
+            pt.check_start("a")
+
     def test_settings_leader_only_and_validated(self, pt):
         solo(pt, "a", "b")
         pt.accept("b", pt.invite("a", "b"))

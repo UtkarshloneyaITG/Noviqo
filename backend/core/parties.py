@@ -12,7 +12,7 @@ from typing import Callable, Dict, List, Set
 
 MAX_MEMBERS = 5
 # People a party needs to start each game: (fewest, most). Roles fills empty seats with bots.
-GAMES = {"uno": (2, MAX_MEMBERS), "roles": (1, 4)}
+GAMES = {"uno": (2, MAX_MEMBERS), "roles": (1, 4), "route": (1, 4)}
 INVITE_TTL_S = 30        # an unanswered invite lapses after this
 INVITE_SLACK_S = 2       # accepting just as the invitee's countdown ends still works (network delay)
 
@@ -33,6 +33,7 @@ class Party:
     mode: str = "casual"
     turn_seconds: int = 30
     stack_draw_cards: bool = False
+    route_rules: str = "traditional"   # Ang Mang Chok Chang: traditional | basic
 
     @property
     def full(self) -> bool:
@@ -167,6 +168,10 @@ class Parties:
             p.turn_seconds = settings["turn_seconds"]
         if "stack_draw_cards" in settings:
             p.stack_draw_cards = bool(settings["stack_draw_cards"])
+        if "route_rules" in settings:
+            if settings["route_rules"] not in ("traditional", "basic"):
+                raise PartyError("Rules must be Traditional or Basic.")
+            p.route_rules = settings["route_rules"]
         return p
 
     def check_start(self, aid: str) -> Party:

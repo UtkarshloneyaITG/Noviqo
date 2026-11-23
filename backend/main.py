@@ -43,6 +43,7 @@ from core.channel_manager import RoomManager
 from core.member import Player
 from core.parties import INVITE_TTL_S, PartyError, Parties
 from core.roles import RolesError, RolesMatch, Seat as RoleSeat
+from core.route import RouteError, RouteMatch, Seat as RouteSeat
 from storage import Storage
 from websocket.connection_manager import ConnectionManager
 
@@ -203,6 +204,7 @@ async def _expire_after_grace(aid: str) -> None:
     log.info("Account %s did not come back — removing", aid)
     await _depart(aid)
     await _leave_roles(aid)
+    await _leave_route(aid)
     await _leave_party_for_good(aid)
     if aid in accounts.accounts:
         accounts.mark_seen(aid)
@@ -255,7 +257,7 @@ async def _dispatch(ws: WebSocket, msg: dict) -> None:
 async def _guarded(ws: WebSocket, handler, msg: dict) -> None:
     try:
         await handler(ws, msg)
-    except (AccountError, PartyError, RolesError) as exc:
+    except (AccountError, PartyError, RolesError, RouteError) as exc:
         await _send(ws, "error", message=str(exc))
     except Exception as exc:
         log.exception("Handler error for type=%s: %s", msg.get("type"), exc)
@@ -286,6 +288,10 @@ async def _on_disconnect(ws: WebSocket) -> None:
     if match:
         match.set_connected(aid, False)
         await _push_roles(match)
+    route = _route_of(aid)
+    if route:
+        route.set_connected(aid, False)
+        await _push_route(route)
     # Don't drop them yet — a refresh or network blip signs back in within
     # seconds and _sign_in cancels this.
     _cancel_grace(aid)
@@ -390,6 +396,10 @@ async def _sign_in(ws: WebSocket, account: dict, token: str) -> None:
     if match:
         match.set_connected(aid, True)
         await _push_roles(match)
+    route = _route_of(aid)                    # back at an Ang Mang Chok Chang table
+    if route:
+        route.set_connected(aid, True)
+        await _push_route(route)
 
     await _push_friends(aid)
     await _push_party(parties.ensure(aid))
@@ -402,6 +412,7 @@ async def _signout(ws: WebSocket, _msg: dict) -> None:
     accounts.signout(_ws_token.pop(id(ws), None))
     await _depart(aid)
     await _leave_roles(aid)
+    await _leave_route(aid)
     await _leave_party_for_good(aid)
     manager.unbind_player(aid)
     accounts.mark_seen(aid)
@@ -465,7 +476,7 @@ async def _buy(ws: WebSocket, msg: dict) -> None:
 def _status(aid: str) -> str:
     if not manager.get_ws(aid):
         return "offline"
-    match = _roles_of(aid)
+    match = _roles_of(aid) or _route_of(aid)
     if match and not match.finished:
         return "in_game"
     game = room_manager.get_room_for_player(aid)
@@ -544,7 +555,7 @@ async def _user_search(ws: WebSocket, msg: dict) -> None:
 def _party_view(p) -> dict:
     return {
         "id": p.id, "leader_id": p.leader_id, "game": p.game, "mode": p.mode,
-        "turn_seconds": p.turn_seconds, "stack_draw_cards": p.stack_draw_cards, "max": 5,
+        "turn_seconds": p.turn_seconds, "stack_draw_cards": p.stack_draw_cards, "route_rules": p.route_rules, "max": 5,
         "members": [{**accounts.person(m), "entry": accounts.accounts[m]["equipped"].get("entry"),
                      "ready": m in p.ready or m == p.leader_id,
                      "rank_label": accounts.rank_label(m)} for m in p.members if m in accounts.accounts],
@@ -638,7 +649,7 @@ async def _party_ready(ws: WebSocket, msg: dict) -> None:
 
 
 async def _party_set(ws: WebSocket, msg: dict) -> None:
-    settings = {k: msg[k] for k in ("game", "mode", "turn_seconds", "stack_draw_cards") if k in msg}
+    settings = {k: msg[k] for k in ("game", "mode", "turn_seconds", "stack_draw_cards", "route_rules") if k in msg}
     await _push_party(parties.configure(manager.get_player_id(ws), settings))
 
 
@@ -650,7 +661,7 @@ async def _party_start(ws: WebSocket, _msg: dict) -> None:
         if not manager.get_ws(m):
             raise PartyError(f"{name} is offline.")
         seated = room_manager.get_room_for_player(m)
-        match = _roles_of(m)
+        match = _roles_of(m) or _route_of(m)
         if (seated and seated.status.value == "playing") or (match and not match.finished):
             raise PartyError(f"{name} is still in a game.")
     for m in p.members:                       # leave any finished table first
@@ -659,8 +670,13 @@ async def _party_start(ws: WebSocket, _msg: dict) -> None:
         if _roles_of(m):
             await _leave_roles(m)
             await _to(m, "roles_left")
+        if _route_of(m):
+            await _leave_route(m)
+            await _to(m, "route_left")
     if p.game == "roles":
         return await _start_roles(p)
+    if p.game == "route":
+        return await _start_route(p)
 
     room_id = room_manager.create_room()
     game = room_manager.get_room(room_id)
@@ -799,13 +815,13 @@ async def _challenge_wild4(ws, _msg):
 
 async def _chat(ws: WebSocket, msg: dict) -> None:
     """A chat line / emoji bubble over your seat, for everyone at the table."""
-    match = _roles_of(manager.get_player_id(ws))
+    match = _roles_of(manager.get_player_id(ws)) or _route_of(manager.get_player_id(ws))
     if match:
         aid = manager.get_player_id(ws)
         text = (msg.get("text") or "").strip()[:120]
         if text:
             await manager.broadcast_common({"type": "chat", "player_id": aid, "player_name": match.seat(aid).name,
-                                            "text": text}, _roles_people(match))
+                                            "text": text}, _table_people(match))
         return
     aid, game = _game_for(ws)
     text = (msg.get("text") or "").strip()[:120]
@@ -828,7 +844,7 @@ def _angle(value, limit: float) -> float:
 async def _look(ws: WebSocket, msg: dict) -> None:
     """Where a player's camera points; the others turn that player's head to match."""
     aid = manager.get_player_id(ws)
-    match = _roles_of(aid)
+    match = _roles_of(aid) or _route_of(aid)
     game = None if match else _game_for(ws)[1]
     yaw, pitch = _angle(msg.get("yaw"), 1.0), _angle(msg.get("pitch"), 0.6)
     now = time.monotonic()
@@ -837,7 +853,7 @@ async def _look(ws: WebSocket, msg: dict) -> None:
     _last_look[aid] = now
     if match:
         return await manager.broadcast_common({"type": "look", "id": aid, "yaw": yaw, "pitch": pitch},
-                                              _roles_people(match, exclude=aid))
+                                              _table_people(match, exclude=aid))
     await _broadcast_to_room(game.room_id, {"type": "look", "id": aid, "yaw": yaw, "pitch": pitch}, exclude_player=aid)
 
 
@@ -1078,6 +1094,135 @@ async def _roles_leave(ws: WebSocket, _msg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ang Mang Chok Chang (core/route.py): four seats, bots fill the empty ones
+# ---------------------------------------------------------------------------
+
+ROUTE_TICK_S = 0.2           # each match's clock: bots act, timers run out, animation pauses end
+route_matches: Dict[str, RouteMatch] = {}
+route_seat: Dict[str, str] = {}              # account id -> the match they're seated at
+_route_tasks: Dict[str, asyncio.Task] = {}
+
+
+def _route_of(aid: Optional[str]) -> Optional[RouteMatch]:
+    mid = route_seat.get(aid) if aid else None
+    return route_matches.get(mid) if mid else None
+
+
+def _route_people(match: RouteMatch, exclude: Optional[str] = None) -> list:
+    """Humans still at this table; someone who left gets none of its messages."""
+    return [s.id for s in match.seats if not s.bot and route_seat.get(s.id) == match.id and s.id != exclude]
+
+
+def _table_people(match, exclude: Optional[str] = None) -> list:
+    """Humans at either table game (chat and head-look relay)."""
+    return _route_people(match, exclude) if isinstance(match, RouteMatch) else _roles_people(match, exclude)
+
+
+def _pay_route(match: RouteMatch) -> None:
+    """Coins and stats for each human as soon as their place is fixed (casual: no rank points).
+    Leaving before finishing counts as leaving early; a finished human keeps their payout."""
+    for sid in match.newly_placed():
+        if sid in accounts.accounts:
+            match.rewards[sid] = accounts.record_game(sid, match.places.index(sid) + 1, len(match.seats), False,
+                                                      match.seat(sid).left)
+
+
+async def _push_route(match: RouteMatch) -> None:
+    _pay_route(match)
+    for aid in _route_people(match):
+        await _to(aid, "route_state", state=match.state_for(aid))
+
+
+async def _start_route(p) -> None:
+    seats = [RouteSeat(id=m, name=accounts.accounts[m]["display_name"],
+                       character=accounts.accounts[m]["equipped"]["character"]) for m in p.members]
+    seats += [RouteSeat(id=f"bot-{uuid.uuid4().hex[:8]}", name=name, character=random.choice(BOT_CHARACTERS), bot=True)
+              for name in random.sample(BOT_NAMES, 4 - len(seats))]
+    random.shuffle(seats)                    # who sits on which side of the board
+    # ponytail: matches live in memory only; a server restart mid-match ends it
+    match = RouteMatch(seats, rules=p.route_rules)
+    route_matches[match.id] = match
+    for m in p.members:
+        route_seat[m] = match.id
+    p.ready.clear()
+    log.info("Route match %s started for party %s (%d bots, %s rules)", match.id, p.id, 4 - len(p.members), p.route_rules)
+    _route_tasks[match.id] = asyncio.create_task(_drive_route(match))
+    await _push_route(match)
+    await _push_party(p)
+    for m in p.members:
+        await _presence_changed(m)
+
+
+async def _drive_route(match: RouteMatch) -> None:
+    """The match's clock: lets it tick, pushes every change, sends the results once at the end."""
+    try:
+        while not match.finished:
+            await asyncio.sleep(ROUTE_TICK_S)
+            if match.tick():
+                await _push_route(match)
+        await _push_route(match)
+        for aid in _route_people(match):
+            await _to(aid, "game_rewards", rewards=match.rewards.get(aid))
+            await _push_profile(aid)
+            await _presence_changed(aid)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _route_tasks.pop(match.id, None)
+
+
+async def _leave_route(aid: str) -> None:
+    """Off the table: mid-match their seat plays itself; the last human out closes it."""
+    match = _route_of(aid)
+    if not match:
+        return
+    del route_seat[aid]
+    if not match.finished:
+        match.leave(aid)
+    if _route_people(match):
+        await _push_route(match)
+        return
+    _pay_route(match)
+    task = _route_tasks.pop(match.id, None)
+    if task:
+        task.cancel()
+    route_matches.pop(match.id, None)
+
+
+def _route_for(ws: WebSocket):
+    aid = manager.get_player_id(ws)
+    match = _route_of(aid)
+    if not match:
+        raise RouteError("You're not at an Ang Mang Chok Chang table.")
+    return aid, match
+
+
+async def _route_throw(ws: WebSocket, _msg: dict) -> None:
+    """Throw the four cowrie shells (the server rolls them)."""
+    aid, match = _route_for(ws)
+    match.do_throw(aid)
+    await _push_route(match)
+
+
+async def _route_move(ws: WebSocket, msg: dict) -> None:
+    """Move one pawn by the throw in hand."""
+    aid, match = _route_for(ws)
+    pawn = msg.get("pawn")
+    if isinstance(pawn, bool) or not isinstance(pawn, int):
+        raise RouteError("Pick one of your pawns.")
+    match.do_move(aid, pawn)
+    await _push_route(match)
+
+
+async def _route_leave(ws: WebSocket, _msg: dict) -> None:
+    aid = manager.get_player_id(ws)
+    await _leave_route(aid)
+    await _send(ws, "route_left")
+    await _push_party(parties.of(aid))
+    await _presence_changed(aid)
+
+
+# ---------------------------------------------------------------------------
 # Handler tables
 # ---------------------------------------------------------------------------
 
@@ -1095,5 +1240,6 @@ HANDLERS = {
     "play_card": _play_card, "draw_card": _draw_card, "pass_turn": _pass_turn,
     "call_uno": _call_uno, "catch_uno": _catch_uno, "challenge_wild4": _challenge_wild4,
     "roles_pick": _roles_pick, "roles_aim": _roles_aim, "roles_guess": _roles_guess, "roles_leave": _roles_leave,
+    "route_throw": _route_throw, "route_move": _route_move, "route_leave": _route_leave,
     "chat": _chat, "look": _look, "leave_room": _leave_room, "rematch": _rematch, "kick_player": _kick_player,
 }

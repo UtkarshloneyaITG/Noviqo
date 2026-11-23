@@ -563,6 +563,73 @@ def test_roles_mantri_fires_at_the_chor_and_the_match_pays_out(client, monkeypat
         assert main.accounts.profile(a_id)["coins"] == coins + st["reward"]["coins"]
 
 
+def route_state(ws, until=lambda st: True):
+    while True:
+        st = recv(ws, "route_state")["state"]
+        if until(st):
+            return st
+
+
+def start_route(client, stack, friends=0):
+    """A party (leader + `friends`) starts an Ang Mang Chok Chang table."""
+    socks = [stack.enter_context(client.websocket_connect("/ws")) for _ in range(friends + 1)]
+    ids = [signup(ws)[0] for ws in socks]
+    for ws, aid in zip(socks[1:], ids[1:]):
+        befriend(socks[0], ws, ids[0], main.accounts.accounts[aid]["username"])
+        party_up(socks[0], ws, aid)
+    socks[0].send_json({"type": "party_set", "game": "route"})
+    socks[0].send_json({"type": "party_start"})
+    states = [route_state(ws) for ws in socks]
+    return socks, ids, states, main._route_of(ids[0])
+
+
+def test_route_match_starts_and_pushes_personal_state(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), (st,), match = start_route(client, stack)
+        assert len(st["seats"]) == 4 and sum(s["bot"] for s in st["seats"]) == 3
+        assert st["seats"][st["you"]]["id"] == a_id and st["rules"] == "traditional"
+
+
+def test_route_throw_and_move_round_trip(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), _, match = start_route(client, stack)
+        match.pauses = False
+        match.turn, match.phase, match.owed, match.afk = match.index_of(a_id), "throw", 1, False
+        match.deadline = float("inf")
+        p = match.pawns[a_id][0]
+        p.state, p.index = "active", 2                          # every throw has a legal move
+        a.send_json({"type": "route_throw"})
+        st = route_state(a, lambda x: x["moves"])
+        a.send_json({"type": "route_move", "pawn": 9})
+        assert "can't move" in recv(a, "error")["message"]
+        a.send_json({"type": "route_move", "pawn": st["moves"][0]["pawn"]})
+        route_state(a, lambda x: any(e["kind"] in ("moved", "entered") and e["seat"] == a_id for e in x["events"]))
+
+
+def test_route_leaving_and_the_last_human_closes_the_table(client):
+    with ExitStack() as stack:
+        (a, b), (a_id, b_id), _, match = start_route(client, stack, friends=1)
+        b.send_json({"type": "route_leave"})
+        recv(b, "route_left")
+        assert route_state(a, lambda x: any(s["left"] for s in x["seats"]))
+        a.send_json({"type": "route_leave"})
+        recv(a, "route_left")
+        assert match.id not in main.route_matches
+
+
+def test_route_seat_survives_a_reconnect(client):
+    with ExitStack() as stack:
+        a = stack.enter_context(client.websocket_connect("/ws"))
+        a_id, token, _ = signup(a)
+        a.send_json({"type": "party_set", "game": "route"})
+        a.send_json({"type": "party_start"})
+        route_state(a)
+    with client.websocket_connect("/ws") as a2:              # back within the grace period
+        a2.send_json({"type": "auth", "token": token})
+        st = route_state(a2)
+        assert st["seats"][st["you"]]["id"] == a_id and main._route_of(a_id) is not None
+
+
 def test_roles_table_chat_and_leaving(client):
     with ExitStack() as stack:
         (a, b), (a_id, b_id), (sa, sb), match = start_roles(client, stack, friends=1)
