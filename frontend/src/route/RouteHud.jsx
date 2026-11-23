@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
 import { SecondsLeft } from '../lobby/ui'
 import { COLOUR_HEX, RULE_NAMES, THROW_NAMES } from './info'
+import { acts } from '../three/route/acts'
 import '../styles/route.css'
 
 const ORDINAL = ['', '1st', '2nd', '3rd', '4th']
@@ -190,16 +191,31 @@ export default function RouteHud() {
   const mine = st.you === st.turn
   const canThrow = mine && st.phase === 'throw'
 
-  useEffect(() => {
-    if (!canThrow) return
-    const key = (e) => {
-      if ((e.key === ' ' || e.key === 'Enter') && !e.target.closest?.('input, textarea, button')) {
-        e.preventDefault()
-        routeThrow()
-      }
+  // Hold to shake the shells in your fist, let go to throw (Space too; Enter throws at once).
+  const hold = (on) => {
+    if (on && canThrow) acts.localHold = true
+    else if (!on && acts.localHold) {
+      acts.localHold = false
+      routeThrow()
     }
-    addEventListener('keydown', key)
-    return () => removeEventListener('keydown', key)
+  }
+  useEffect(() => {
+    if (!canThrow) {
+      acts.localHold = false
+      return
+    }
+    const typing = (e) => e.target.closest?.('input, textarea')
+    const down = (e) => {
+      if (typing(e) || e.repeat) return
+      if (e.key === ' ') (e.preventDefault(), (acts.localHold = true))
+      else if (e.key === 'Enter') (e.preventDefault(), routeThrow())
+    }
+    const up = (e) => {
+      if (e.key === ' ' && acts.localHold) (e.preventDefault(), (acts.localHold = false), routeThrow())
+    }
+    addEventListener('keydown', down)
+    addEventListener('keyup', up)
+    return () => (removeEventListener('keydown', down), removeEventListener('keyup', up), (acts.localHold = false))
   }, [canThrow, routeThrow])
 
   return (
@@ -236,8 +252,14 @@ export default function RouteHud() {
       <div className="rt-bottom">
         <LastThrow last={st.last} owed={st.owed} mine={mine} by={st.last && st.last.seat !== me?.id ? st.seats.find((s) => s.id === st.last.seat)?.name : null} />
         {canThrow && (
-          <button className="rt-btn go rt-throwbtn" onClick={routeThrow} autoFocus>
-            Throw
+          <button
+            className="rt-btn go rt-throwbtn"
+            onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), hold(true))}
+            onPointerUp={() => hold(false)}
+            onPointerCancel={() => (acts.localHold = false)}
+            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), routeThrow())}
+          >
+            Hold to shake · release to throw
           </button>
         )}
         {mine && st.phase === 'move' && st.moves.length > 0 && (

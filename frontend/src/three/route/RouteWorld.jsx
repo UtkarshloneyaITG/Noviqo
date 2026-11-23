@@ -25,6 +25,7 @@ import { COLOUR_HEX, pathFor, rotate, viewTurns } from '../../route/info'
 import Board3D, { BOARD_TOP } from './Board3D'
 import Pawns3D from './Pawns3D'
 import Shells3D from './Shells3D'
+import Hand3D from './Hand3D'
 import { acts } from './acts'
 import '../../styles/route.css'
 
@@ -105,6 +106,7 @@ export default function RouteWorld() {
       <Board3D turns={turns} />
       <Pawns3D st={st} turns={turns} onPick={routeMove} />
       <Shells3D st={st} />
+      {st.seats[st.you] && <Hand3D seatId={st.seats[st.you].id} colour={st.seats[st.you].colour} />}
       {st.seats
         .filter((s) => s.index !== st.you)
         .map((s) => (

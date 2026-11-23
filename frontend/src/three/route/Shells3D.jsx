@@ -69,6 +69,7 @@ export default function Shells3D({ st }) {
       faces: last.faces,
       special: last.extra,
       from: refs.current.map((g) => (g ? g.position.clone() : TRAY.clone())),
+      fromScale: refs.current[0] ? refs.current[0].scale.x / SIZE : 1,
       spins: last.faces.map(() => [3 + Math.random() * 4, 2 + Math.random() * 4, Math.random() * Math.PI * 2]),
     }
   }, [st])
@@ -77,12 +78,15 @@ export default function Shells3D({ st }) {
     const k = fly.current
     // In someone's hand: the shells ride their palm (and so shake with it).
     if (holder && (!k || k.t >= 1)) {
-      const anchor = acts.hands[holder]?.anchor(hand)
+      const h = acts.hands[holder]
+      const anchor = h?.anchor(hand)
       if (anchor) {
+        const k = h.scale ?? 1 // your first-person hand is small and close: smaller shells
         refs.current.forEach((g, i) => {
           if (!g) return
           const [x, y, z] = IN_HAND[i]
-          g.position.set(anchor.x + x, anchor.y + y, anchor.z + z)
+          g.scale.setScalar(SIZE * k)
+          g.position.set(anchor.x + x * k, anchor.y + y * k, anchor.z + z * k)
           g.rotation.set(clock.elapsedTime * 2 + i, i, 0)
         })
         if (glow.current) glow.current.material.opacity = 0
@@ -96,6 +100,7 @@ export default function Shells3D({ st }) {
       if (!g) return
       const end = ends[i]
       const lift = k.faces[i] === 1 ? DOME_H : 0 // a mouth-up shell rests on its dome
+      g.scale.setScalar(SIZE * (k.fromScale + (1 - k.fromScale) * e))
       g.position.lerpVectors(k.from[i], end, e)
       g.position.y += lift * e + Math.abs(Math.sin(e * Math.PI * 1.5)) * (1 - e) * 1.2
       const [sx, sz, yaw] = k.spins[i]
