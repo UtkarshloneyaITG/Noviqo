@@ -112,6 +112,7 @@ export function poseSeated(root) {
       const side = sideOf(b, s)
       aim(up, lo, new THREE.Vector3(side * 0.18, -0.75, 0.55))
       aim(lo, hand, new THREE.Vector3(-side * 0.35, 0.25, 1))
+      relaxHand(hand) // fingers closed round the cards, not splayed flat
     }
   }
   return b
