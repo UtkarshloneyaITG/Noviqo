@@ -313,6 +313,17 @@ function EventBanner() {
 
   const slides = [
     {
+      panel: 'games', // opens Change game, where it's listed
+      title: 'New game has arrived',
+      text: 'Raja Mantri Chor Sipahi is here. Tap to play.',
+      art: (
+        <div className="emb">
+          <span className="tagnew">New</span>
+          <RolesLogo size={84} />
+        </div>
+      ),
+    },
+    {
       panel: 'games', // opens Change game, where the new game is listed
       title: 'New game is arriving',
       text: 'Play now.',
@@ -366,8 +377,8 @@ function EventBanner() {
         <div className="dots">
           {slides.map((s, i) => (
             <button
-              key={s.panel}
-              aria-label={`Show ${s.panel}`}
+              key={s.title}
+              aria-label={`Show ${s.title}`}
               aria-current={i === slide % slides.length}
               onClick={() => setSlide(i)}
             />
