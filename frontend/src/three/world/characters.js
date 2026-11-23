@@ -13,6 +13,7 @@ import { useMemo } from 'react'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
+import { solveElbow } from './reach'
 
 export const DEFAULT_CHARACTER = 'char:m-Casual'
 
@@ -166,6 +167,41 @@ function idleAxes(root, b) {
     headX: local(b.head, X),
     armLZ: local(b.upperarml, Z),
     armRZ: local(b.upperarmr, Z),
+  }
+}
+
+const r1 = new THREE.Vector3()
+const r2 = new THREE.Vector3()
+const r3 = new THREE.Vector3()
+const r4 = new THREE.Vector3()
+const rq1 = new THREE.Quaternion()
+const rq2 = new THREE.Quaternion()
+
+/**
+ * Reach one arm ('r' or 'l') for a world point, blended in by `w` (0..1)
+ * over the current pose: a two-bone solve with the elbow dropping down and
+ * out from the body. Call after applyIdle / applyLook, every frame.
+ */
+export function reachArm(model, side, target, w) {
+  const b = model.bones
+  const up = b['upperarm' + side]
+  const lo = b['lowerarm' + side]
+  const hand = b['hand' + side]
+  if (!up || !lo || !hand || !(w > 0)) return
+  model.root.updateWorldMatrix(true, true)
+  const S = up.getWorldPosition(r1)
+  const a = S.distanceTo(lo.getWorldPosition(r2))
+  const len = r2.distanceTo(hand.getWorldPosition(r3))
+  const body = (b.chest || up.parent).getWorldPosition(r4)
+  const out = r3.copy(S).sub(body).setY(0).normalize().multiplyScalar(0.6)
+  const e = solveElbow(S.toArray(), target.toArray(), a, len, [out.x, -1, out.z])
+  rq1.copy(up.quaternion)
+  rq2.copy(lo.quaternion)
+  aim(up, lo, r2.fromArray(e).sub(S))
+  aim(lo, hand, r3.copy(target).sub(r2.fromArray(e)))
+  if (w < 1) {
+    up.quaternion.copy(rq1.slerp(up.quaternion, w))
+    lo.quaternion.copy(rq2.slerp(lo.quaternion, w))
   }
 }
 

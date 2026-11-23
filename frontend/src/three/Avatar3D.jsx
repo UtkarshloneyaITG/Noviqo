@@ -17,7 +17,7 @@ import * as THREE from 'three'
 import Chair3D, { SEAT_TOP } from './Chair3D'
 import { getCardBackTexture } from './tileTextures'
 import { getCardGeometries } from './tileGeometry'
-import { useCharacterModel, seatDrop, applyIdle, applyLook } from './world/characters'
+import { useCharacterModel, seatDrop, applyIdle, applyLook, reachArm } from './world/characters'
 import { looks } from '../store/appStore'
 import { beamMaterial, glowTexture, PALETTE } from './world/sky'
 import { FIGURE_H, FIGURE_SCALE as S, FLOOR_Y, SEAT_RADIUS, TABLE_RADIUS, TABLE_TOP_Y } from './layout'
@@ -64,7 +64,7 @@ function HeldCards({ count, back }) {
   })
 }
 
-function Figure({ character, offline, count, back, phase, playerId }) {
+function Figure({ character, offline, count, back, phase, playerId, reach }) {
   const model = useCharacterModel(character, 'sit', FIGURE_H)
   const drop = useMemo(() => seatDrop(model, SEAT_TOP + HIP_LIFT), [model])
 
@@ -116,6 +116,11 @@ function Figure({ character, offline, count, back, phase, playerId }) {
     look.current.yaw += (want.yaw - look.current.yaw) * k
     look.current.pitch += (want.pitch - look.current.pitch) * k
     applyLook(model, look.current.yaw * 1.25, look.current.pitch * 1.25)
+    // Optional: a table game steers the right hand to a point (UNO never passes `reach`).
+    if (reach) {
+      reach.hand = model.bones.handr
+      if (reach.target && reach.w > 0.001) reachArm(model, 'r', reach.target, reach.w)
+    }
   })
 
   return (
@@ -173,14 +178,14 @@ function TurnBeam() {
 
 const ZERO_LOOK = { yaw: 0, pitch: 0 }
 
-export default function Avatar3D({ seat, hue = 200, active = false, offline = false, count = 0, character, back, playerId }) {
+export default function Avatar3D({ seat, hue = 200, active = false, offline = false, count = 0, character, back, playerId, reach }) {
   const yaw = Math.atan2(-seat.x, -seat.z) // face the table centre
 
   return (
     <group position={[seat.x, 0, seat.z]} rotation={[0, yaw, 0]}>
       <Chair3D hue={hue} offline={offline} />
       <Suspense fallback={null}>
-        <Figure character={character} offline={offline} count={count} back={back} phase={hue / 57} playerId={playerId} />
+        <Figure character={character} offline={offline} count={count} back={back} phase={hue / 57} playerId={playerId} reach={reach} />
       </Suspense>
       {active && !offline && <TurnBeam />}
     </group>
