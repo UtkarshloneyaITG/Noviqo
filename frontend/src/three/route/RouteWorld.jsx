@@ -5,10 +5,11 @@
  * cowrie shells (Shells3D), and the other three players seated at their own
  * side of the board, each under a name tag in their seat colour.
  *
- * Their right arms do the hand work (Avatar3D `reach`): while it's their
- * throw they hold the shells out over the table edge and shake them, the
- * throw whips the arm toward the board, and a move reaches for the pawn and
- * follows it as it is carried (acts.carry). Your own hand is Hand3D.
+ * Everyone's right arm does the hand work (Avatar3D `reach`): while it's
+ * their throw they hold the shells out over the table edge and shake them,
+ * the throw whips the arm toward the board, and a move reaches for the pawn
+ * and follows it as it is carried (acts.carry). Your own arm is your
+ * character's real right arm, seen in first person (FirstPersonArm).
  */
 import { useEffect, useMemo } from 'react'
 import { Html } from '@react-three/drei'
@@ -26,7 +27,7 @@ import SeatCard from '../../route/SeatCard'
 import Board3D, { BOARD_TOP } from './Board3D'
 import Pawns3D from './Pawns3D'
 import Shells3D from './Shells3D'
-import Hand3D from './Hand3D'
+import FirstPersonArm from './FirstPersonArm'
 import { acts } from './acts'
 import '../../styles/route.css'
 
@@ -46,7 +47,7 @@ function seatSpot(seatIndex, turns) {
   return { x: (dx / len) * SEAT_RADIUS, z: (dz / len) * SEAT_RADIUS }
 }
 
-function Opponent({ s, spot, acting }) {
+function Seated({ s, spot, acting }) {
   const reach = useMemo(() => ({ target: new THREE.Vector3(), w: 0, hand: null }), [])
   const holdAt = useMemo(
     () => new THREE.Vector3(spot.x, 0, spot.z).normalize().multiplyScalar(TABLE_RADIUS - 0.5).setY(BOARD_TOP + 1.1),
@@ -104,11 +105,11 @@ export default function RouteWorld() {
       <Board3D turns={turns} />
       <Pawns3D st={st} turns={turns} onPick={routeMove} />
       <Shells3D st={st} />
-      {st.seats[st.you] && <Hand3D seatId={st.seats[st.you].id} colour={st.seats[st.you].colour} />}
+      {st.seats[st.you] && <FirstPersonArm seatId={st.seats[st.you].id} character={st.seats[st.you].character} />}
       {st.seats
         .filter((s) => s.index !== st.you)
         .map((s) => (
-          <Opponent key={s.id} s={s} spot={seatSpot(s.index, turns)} acting={st.turn === s.index && st.phase !== 'over'} />
+          <Seated key={s.id} s={s} spot={seatSpot(s.index, turns)} acting={st.turn === s.index && st.phase !== 'over'} />
         ))}
     </>
   )

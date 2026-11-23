@@ -180,9 +180,10 @@ const rq2 = new THREE.Quaternion()
 /**
  * Reach one arm ('r' or 'l') for a world point, blended in by `w` (0..1)
  * over the current pose: a two-bone solve with the elbow dropping down and
- * out from the body. Call after applyIdle / applyLook, every frame.
+ * out from the body; out of reach, it leans the chest in (off with `lean: false`).
+ * Call after applyIdle / applyLook, every frame.
  */
-export function reachArm(model, side, target, w) {
+export function reachArm(model, side, target, w, { lean: canLean = true } = {}) {
   const b = model.bones
   const up = b['upperarm' + side]
   const lo = b['lowerarm' + side]
@@ -195,7 +196,7 @@ export function reachArm(model, side, target, w) {
   // Too far for the arm alone? Lean the body in (up to ~35°), as a seated player would.
   const lean = b.chest // applyIdle resets it every frame, so the lean never piles up
   const short = S.distanceTo(target) - (a + len) * 0.92
-  if (lean && short > 0) {
+  if (canLean && lean && short > 0) {
     const pivot = lean.getWorldPosition(r4)
     const axis = r2.set(0, 1, 0).cross(r3.copy(target).sub(pivot).setY(0)).normalize()
     turnBone(lean, axis, Math.min(0.6, short / Math.max(1e-3, S.distanceTo(pivot))) * w)
