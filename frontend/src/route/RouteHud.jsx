@@ -1,8 +1,10 @@
 /**
- * RouteHud — the screen overlay at an Ang Mang Chok Chang table: whose turn
- * and what to do (with the 20 s clock), the THROW button (also Space/Enter),
- * the last throw's four shells, your legal moves as buttons (the 3D pawns
- * are clickable too), each seat's home / active / finished pawns, notices
+ * RouteHud — the screen overlay at an Ang Mang Chok Chang table: a one-line
+ * prompt at the bottom (whose turn, what to do, your clock), the hold-to-throw
+ * button with its shake meter (Space too; Enter throws at once), a big banner
+ * for each throw (CHOWKA / BAARA, extra throws), the last throw's shells,
+ * your legal moves as compact buttons (the 3D pawns are clickable too), your
+ * own card in the corner (the others' cards float over their seats), notices
  * for captures and finishes, How to play, Leave, and the final places with
  * your coins. The 3D table (three/route/RouteWorld) reads the same state.
  */
@@ -11,6 +13,7 @@ import { useAppStore } from '../store/appStore'
 import { SecondsLeft } from '../lobby/ui'
 import { COLOUR_HEX, RULE_NAMES, THROW_NAMES } from './info'
 import { acts } from '../three/route/acts'
+import SeatCard from './SeatCard'
 import '../styles/route.css'
 
 const ORDINAL = ['', '1st', '2nd', '3rd', '4th']
@@ -44,65 +47,64 @@ function LastThrow({ last, owed, mine, by }) {
         {name && <small>{name}</small>}
       </b>
       {by && <span className="rt-owed">{by}</span>}
-      {last.extra && <span className="rt-extra">Extra throw!</span>}
-      {mine && owed > 1 && <span className="rt-owed">{owed} throws to go</span>}
+      {mine && owed > 1 && <span className="rt-extra">{owed} throws to go</span>}
     </div>
   )
 }
 
 function moveLabel(m) {
-  if (m.enters) return 'enters the board'
-  if (m.finishes) return 'reaches the centre'
-  return `moves to square ${m.to + 1}${m.to > 15 ? ' (inner)' : ''}`
+  if (m.enters) return 'enter'
+  if (m.finishes) return 'to the centre'
+  return `to ${m.to + 1}${m.to > 15 ? ' (inner)' : ''}`
+}
+
+/** A big banner for each new throw: the value, Chowka / Baara, and whether it earns another. */
+function ThrowBanner({ st }) {
+  const seen = useRef(null)
+  const [shown, setShown] = useState(null)
+  useEffect(() => {
+    const fresh = seen.current == null ? [] : st.events.filter((e) => e.seq > seen.current && e.kind === 'throw')
+    seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
+    const t = fresh[fresh.length - 1]
+    if (!t) return
+    setShown({ ...t, key: t.seq })
+    const id = setTimeout(() => setShown(null), 1400)
+    return () => clearTimeout(id)
+  }, [st])
+  if (!shown) return null
+  const who = st.seats.find((s) => s.id === shown.seat)
+  const name = THROW_NAMES[shown.value]
+  return (
+    <div key={shown.key} className={`rt-banner ${shown.extra ? 'special' : ''}`} style={{ '--seat': COLOUR_HEX[who?.colour] }} aria-hidden="true">
+      <b>{shown.value}</b>
+      {name && <span className="nm">{name}!</span>}
+      {shown.extra && <span className="ex">Extra throw</span>}
+      <small>{who?.index === st.you ? 'You' : who?.name}</small>
+    </div>
+  )
 }
 
 function Prompt({ st, me }) {
   const seat = st.seats[st.turn]
   const mine = st.you === st.turn
-  let big
-  let sub = null
-  if (st.phase === 'over') big = 'Game over'
-  else if (mine && st.phase === 'throw') {
-    big = 'Your throw'
-    sub = 'Throw the four cowrie shells (Space)'
-  } else if (mine && st.phase === 'move') {
-    big = 'Move a pawn'
-    sub = st.moves.length ? 'Tap a glowing pawn, or pick below' : 'No pawn can move'
-  } else {
-    big = `${seat.name}${seat.bot ? ' (bot)' : ''} is playing`
-    sub = st.phase === 'move' ? 'Choosing a pawn…' : 'Throwing…'
-  }
+  let text
+  if (st.phase === 'over') text = 'Game over'
+  else if (mine && st.phase === 'throw') text = 'Your throw — hold to shake, let go to throw'
+  else if (mine && st.phase === 'move') text = st.moves.length ? 'Move a pawn — tap a glowing one' : 'No pawn can move'
+  else if (mine) text = 'Your turn'
+  else text = `${seat.name} is ${st.phase === 'move' ? 'choosing a pawn' : 'throwing'}…`
+  const gate = me && st.rules === 'traditional' && !me.captured && st.phase !== 'over'
   return (
-    <div className="rt-panel rt-prompt" style={{ '--seat': COLOUR_HEX[seat.colour] }}>
-      <b>{big}</b>
-      {sub && <span>{sub}</span>}
+    <div className="rt-panel rt-prompt" style={{ '--seat': COLOUR_HEX[seat.colour] }} aria-live="polite">
+      <i className="rt-dot" style={{ background: COLOUR_HEX[seat.colour] }} aria-hidden="true" />
+      <b>{text}</b>
       {mine && st.deadline && st.phase !== 'over' && (
         <span className="rt-clock">
           <SecondsLeft until={st.deadline} />s
         </span>
       )}
-      {me && st.rules === 'traditional' && !me.captured && <span className="rt-gate">Capture a pawn to open your inner path</span>}
+      {gate && <span className="rt-gate" title="Traditional rules">Capture once to open your inner path</span>}
     </div>
-  )
-}
-
-function Seats({ st }) {
-  return (
-    <ol className="rt-panel rt-seats" aria-label="Players">
-      {st.seats.map((s) => (
-        <li key={s.id} className={`${st.turn === s.index && st.phase !== 'over' ? 'turn' : ''} ${s.left ? 'left' : ''}`}>
-          <Dot colour={s.colour} />
-          <span className="nm">
-            {s.name}
-            {s.index === st.you && ' (you)'}
-            {s.bot && ' · bot'}
-          </span>
-          <span className="ct" title="At home · on the board · finished">
-            {s.place ? ORDINAL[s.place] : `${s.home} · ${s.active} · ${s.finished}/4`}
-          </span>
-        </li>
-      ))}
-    </ol>
   )
 }
 
@@ -186,6 +188,7 @@ export default function RouteHud() {
   const { routeThrow, routeMove, routeLeave } = useAppStore.getState()
   const [leaving, setLeaving] = useState(false)
   const [help, setHelp] = useState(false)
+  const [holding, setHolding] = useState(false)
   const notes = useNotices(st)
   const me = st.seats[st.you]
   const mine = st.you === st.turn
@@ -193,25 +196,27 @@ export default function RouteHud() {
 
   // Hold to shake the shells in your fist, let go to throw (Space too; Enter throws at once).
   const hold = (on) => {
-    if (on && canThrow) acts.localHold = true
+    if (on && canThrow) (acts.localHold = true), setHolding(true)
     else if (!on && acts.localHold) {
       acts.localHold = false
+      setHolding(false)
       routeThrow()
     }
   }
   useEffect(() => {
     if (!canThrow) {
       acts.localHold = false
+      setHolding(false)
       return
     }
     const typing = (e) => e.target.closest?.('input, textarea')
     const down = (e) => {
       if (typing(e) || e.repeat) return
-      if (e.key === ' ') (e.preventDefault(), (acts.localHold = true))
+      if (e.key === ' ') (e.preventDefault(), (acts.localHold = true), setHolding(true))
       else if (e.key === 'Enter') (e.preventDefault(), routeThrow())
     }
     const up = (e) => {
-      if (e.key === ' ' && acts.localHold) (e.preventDefault(), (acts.localHold = false), routeThrow())
+      if (e.key === ' ' && acts.localHold) (e.preventDefault(), (acts.localHold = false), setHolding(false), routeThrow())
     }
     addEventListener('keydown', down)
     addEventListener('keyup', up)
@@ -247,27 +252,34 @@ export default function RouteHud() {
             ))}
         </div>
       </div>
-      <Prompt st={st} me={me} />
-      <Seats st={st} />
+      {me && (
+        <div className="rt-mycard">
+          <SeatCard seat={me} acting={mine && st.phase !== 'over'} you />
+        </div>
+      )}
+      <ThrowBanner st={st} />
       <div className="rt-bottom">
+        <Prompt st={st} me={me} />
         <LastThrow last={st.last} owed={st.owed} mine={mine} by={st.last && st.last.seat !== me?.id ? st.seats.find((s) => s.id === st.last.seat)?.name : null} />
         {canThrow && (
           <button
-            className="rt-btn go rt-throwbtn"
+            className={`rt-btn go rt-throwbtn ${holding ? 'holding' : ''}`}
             onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), hold(true))}
             onPointerUp={() => hold(false)}
-            onPointerCancel={() => (acts.localHold = false)}
+            onPointerCancel={() => ((acts.localHold = false), setHolding(false))}
             onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), routeThrow())}
+            aria-label="Throw the shells: hold to shake, release to throw"
           >
-            Hold to shake · release to throw
+            <span>{holding ? 'Shaking… let go!' : 'Throw'}</span>
+            <i className="meter" aria-hidden="true" />
           </button>
         )}
         {mine && st.phase === 'move' && st.moves.length > 0 && (
           <div className="rt-moves" role="group" aria-label="Your moves">
             {st.moves.map((m) => (
               <button key={m.pawn} className={`rt-btn ${m.captures.length ? 'hit' : ''}`} onClick={() => routeMove(m.pawn)}>
-                <Dot colour={me.colour} /> Pawn {m.pawn + 1} {moveLabel(m)}
-                {m.captures.length > 0 && ' · captures!'}
+                <Dot colour={me.colour} /> {m.pawn + 1} · {moveLabel(m)}
+                {m.captures.length > 0 && <em>capture</em>}
               </button>
             ))}
           </div>

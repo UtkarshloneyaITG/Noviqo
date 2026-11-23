@@ -2,7 +2,7 @@
    over seated players (three/route). Same look as the other tables: dark
    glass panels, cyan and amber, Big Shoulders Display + Figtree. */
 
-.rt, .rt-tag {
+.rt, .rt-tag, .rt-card {
   --panel: rgba(9, 14, 34, .78); --line: rgba(110, 190, 255, .22);
   --cyan: #4fd8ff; --amber: #ffc53d; --red: #ff4d6d; --text: #eef3ff; --muted: #8e9bc0;
   --display: "Big Shoulders Display", Impact, sans-serif; --ui: "Figtree", system-ui, sans-serif;
@@ -30,12 +30,10 @@
 .rt-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .rt-actions > span { font-size: 13px; color: var(--muted); max-width: 260px; text-align: right; }
 
-.rt-prompt { top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 22px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; border-top: 3px solid var(--seat, var(--cyan)); }
-.rt-prompt b { font-family: var(--display); font-size: 26px; }
-.rt-prompt span { color: var(--muted); font-size: 13px; font-weight: 600; }
-.rt-prompt .rt-clock { color: var(--amber); font-weight: 800; font-size: 15px; }
-.rt-prompt .rt-gate { color: var(--amber); font-size: 12px; }
-
+.rt-prompt { position: static; display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-left: 3px solid var(--seat, var(--cyan)); clip-path: var(--cut-s); max-width: calc(100vw - 32px); }
+.rt-prompt b { font-weight: 800; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-prompt .rt-clock { color: var(--amber); font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; }
+.rt-prompt .rt-gate { color: var(--amber); font-size: 12px; font-weight: 700; padding-left: 10px; border-left: 1px solid var(--line); white-space: nowrap; }
 .rt-seats { top: 84px; left: 12px; list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 210px; }
 .rt-seats li { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 3px 6px; }
 .rt-seats li.turn { background: rgba(79,216,255,.12); }
@@ -84,3 +82,39 @@
   .rt-seats { top: 64px; min-width: 170px; }
   .rt .rt-throwbtn { height: 42px; font-size: 20px; }
 }
+
+/* ── player cards (over each seat, and yours in the corner) ── */
+.rt-card { font-family: var(--ui); color: var(--text); background: rgba(9,14,34,.84); clip-path: var(--cut-s); padding: 6px 10px 7px; min-width: 112px; border-top: 3px solid var(--seat, var(--cyan)); box-shadow: inset 0 0 0 1px rgba(110,190,255,.18); transition: box-shadow .2s, transform .2s; pointer-events: none; user-select: none; }
+.rt-card .nm { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.rt-card .nm b { font-weight: 800; font-size: 14px; }
+.rt-card .nm small { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.rt-card .nm em { margin-left: auto; font-style: normal; font-weight: 800; color: var(--amber); }
+.rt-card .pips { display: flex; gap: 5px; margin-top: 5px; }
+.rt-card .pips i { width: 11px; height: 11px; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--seat, var(--cyan)); }
+.rt-card .pips i.out { background: var(--seat, var(--cyan)); }
+.rt-card .pips i.done { background: var(--amber); border-color: var(--amber); }
+.rt-card.acting { box-shadow: inset 0 0 0 1px var(--seat, var(--cyan)), 0 0 18px 2px color-mix(in srgb, var(--seat, #4fd8ff) 55%, transparent); transform: translateY(-3px); }
+.rt-card.away { opacity: .5; }
+.rt-mycard { left: 12px; bottom: 18px; }
+.rt-mycard .rt-card { min-width: 132px; }
+
+/* ── the big throw banner ── */
+.rt-banner { left: 50%; top: 38%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; pointer-events: none; animation: rt-pop 1.4s cubic-bezier(.2,.9,.3,1.2) both; text-shadow: 0 3px 18px rgba(0,0,0,.6); }
+.rt-banner b { font-family: var(--display); font-size: 96px; line-height: .9; color: #fff; }
+.rt-banner .nm { font-family: var(--display); font-size: 36px; letter-spacing: .08em; text-transform: uppercase; color: var(--amber); }
+.rt-banner .ex { margin-top: 4px; padding: 3px 12px; font-weight: 800; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: #1b1300; background: var(--amber); clip-path: var(--cut-s); }
+.rt-banner small { margin-top: 6px; font-weight: 800; font-size: 13px; color: var(--seat, var(--text)); }
+.rt-banner.special b { color: var(--amber); text-shadow: 0 0 28px rgba(255,197,61,.75), 0 3px 18px rgba(0,0,0,.6); }
+@keyframes rt-pop { 0% { opacity: 0; transform: translate(-50%, -40%) scale(.6); } 14% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); } 24% { transform: translate(-50%, -50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -58%) scale(.98); } }
+
+/* ── hold to throw ── */
+.rt .rt-throwbtn { position: relative; overflow: hidden; touch-action: none; user-select: none; }
+.rt .rt-throwbtn span { position: relative; z-index: 1; }
+.rt .rt-throwbtn .meter { position: absolute; left: 0; bottom: 0; height: 5px; width: 0; background: #04202b; opacity: .45; }
+.rt .rt-throwbtn.holding { background: var(--amber); color: #1b1300; animation: rt-shake .12s linear infinite; }
+.rt .rt-throwbtn.holding .meter { animation: rt-fill 1s linear infinite; }
+@keyframes rt-fill { from { width: 0; } to { width: 100%; } }
+@keyframes rt-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px) rotate(-.6deg); } 75% { transform: translateX(2px) rotate(.6deg); } }
+.rt-moves .rt-btn em { font-style: normal; font-weight: 800; color: var(--amber); margin-left: 4px; }
+@media (prefers-reduced-motion: reduce) { .rt .rt-throwbtn.holding, .rt-banner { animation: none; } .rt .rt-throwbtn.holding .meter { width: 100%; animation: none; } }
+@media (max-height: 500px) { .rt-banner b { font-size: 64px; } .rt-banner .nm { font-size: 24px; } .rt-mycard { bottom: 10px; } }

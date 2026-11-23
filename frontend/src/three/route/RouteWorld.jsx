@@ -21,7 +21,8 @@ import LookControls from '../LookControls'
 import Avatar3D from '../Avatar3D'
 import { HORIZON_FOG } from '../world/sky'
 import { FIGURE_H, FLOOR_Y, SEAT_RADIUS, TABLE_RADIUS } from '../layout'
-import { COLOUR_HEX, pathFor, rotate, viewTurns } from '../../route/info'
+import { pathFor, rotate, viewTurns } from '../../route/info'
+import SeatCard from '../../route/SeatCard'
 import Board3D, { BOARD_TOP } from './Board3D'
 import Pawns3D from './Pawns3D'
 import Shells3D from './Shells3D'
@@ -80,11 +81,8 @@ function Opponent({ s, spot, acting }) {
     <group>
       <Avatar3D seat={spot} hue={HUE[s.colour]} active={acting} offline={!s.connected || s.left} count={0}
         character={s.character} playerId={s.id} reach={reach} />
-      <Html position={[spot.x, FLOOR_Y + FIGURE_H * 0.78, spot.z]} center zIndexRange={[5, 0]}>
-        <div className="rt-tag" style={{ '--seat': COLOUR_HEX[s.colour] }}>
-          {s.name}
-          {s.place ? ` · ${s.place}${['', 'st', 'nd', 'rd', 'th'][s.place]}` : ''}
-        </div>
+      <Html position={[spot.x, FLOOR_Y + FIGURE_H * 0.7, spot.z]} center zIndexRange={[5, 0]}>
+        <SeatCard seat={s} acting={acting} />
       </Html>
     </group>
   )
