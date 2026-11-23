@@ -394,8 +394,8 @@ class TestEntrances:
         p = new(acc, "@ana")[0]
         assert p["equipped"]["entry"] == "entry:classic" and "entry:classic" in p["inventory"]
 
-    def test_ten_entrances_are_for_sale(self):
-        assert len([i for i in catalog.ITEMS if i["kind"] == "entry" and i["price"]]) == 10
+    def test_eleven_entrances_are_for_sale(self):
+        assert len([i for i in catalog.ITEMS if i["kind"] == "entry" and i["price"]]) == 11
 
     def test_buy_and_equip_an_entrance(self, acc):
         aid = new(acc, "@ana")[0]["id"]

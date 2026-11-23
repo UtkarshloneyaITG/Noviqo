@@ -334,6 +334,30 @@ export const ENTRANCES = {
       <Flash key="flash" {...P} a={0.38} b={0.5} color="#fff1d0" size={4} y={0.3} />,
     ],
   },
+
+  // A whirl of blossom petals: the figure fades in kneeling, head bowed, spins out of
+  // the whirl as it rises, opens its arms to the falling petals, then settles.
+  'entry:petals': {
+    secs: 2.4,
+    motion: (p) => ({ show: p > 0.26, ry: 1.2 * Math.PI * (1 - easeOut(seg(p, 0.26, 0.7))) }),
+    reveal: (p) => ({ cut: easeOut(seg(p, 0.26, 0.62)), color: C.pink, glow: 2.4 }),
+    body: (p, c) => {
+      const k = hold(p, 0.26, 0.66, 0.15) // kneeling, palms together…
+      kneel(c, k)
+      c.bend('head', 'x', 0.35 * k)
+      const open = hold(p, 0.6, 1, 0.3) // …then up, arms open to the petals
+      if (open > 0 && k < 0.5) arms(c, 'rest', 'open', open)
+      else arms(c, 'rest', 'palms', k)
+    },
+    light: (p) => ({ color: '#ff9ac8', intensity: 4 * bump(p) + 3 * bump(seg(p, 0.6, 0.8)), y: 1.1 }),
+    fx: (P) => [
+      <Sparks key="whirl" {...P} mode="orbit" a={0} b={0.7} color="#ffc0da" n={90} size={0.08} />,
+      <Puffs key="blush" {...P} a={0} b={0.6} color="#ffb3cf" spread={1.2} size={1.2} n={14} opacity={0.5} />,
+      <Runes key="runes" {...P} a={0.05} b={0.95} color={C.pink} size={2} />,
+      <Sparks key="drift" {...P} a={0.55} b={1} color="#ffd6e6" n={45} />,
+      <Shockwave key="ring" {...P} a={0.62} b={1} color={C.pink} />,
+    ],
+  },
 }
 const DEFAULT = 'entry:classic'
 const REST = { x: 0, y: 0, z: 0, s: 1, sy: 1, ry: 0, show: true }

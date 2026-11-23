@@ -319,6 +319,7 @@ const ENTRY_ART = {
   'entry:confetti': <><path className="f" d="m8 41 9-24 15 15z" /><path d="M27 9v4M35 13l-3 3M40 21h-4M30 6l1 2M38 6l-2 2M41 28l-2-1" /></>,
   'entry:portal': <><ellipse className="f" cx="24" cy="24" rx="12" ry="18" /><ellipse cx="24" cy="24" rx="6.5" ry="11" /></>,
   'entry:hologram': <>{FIG}<path d="M14 20h20M14 27h20M14 34h20" strokeDasharray="2 3" /></>,
+  'entry:petals': <>{FIG}<path className="f" d="M8 14c2-3 6-3 6 0s-4 3-6 0zM34 9c2-3 6-3 6 0s-4 3-6 0zM36 30c2-3 6-3 6 0s-4 3-6 0zM5 31c2-3 6-3 6 0s-4 3-6 0z" /></>,
   'entry:hero': <><path className="f" d="M17 38c0-6 3-10 7-10s7 4 7 10z" /><circle className="f" cx="24" cy="23" r="3.6" /><path d="M8 42h32M10 34l-4-3M38 34l4-3M14 28l-3-4M34 28l3-4" /></>,
 }
 

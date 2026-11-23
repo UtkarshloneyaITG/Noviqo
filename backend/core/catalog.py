@@ -58,7 +58,8 @@ ITEMS: List[dict] = (
        _item("entry:tornado", "entry", "Tornado", 400), _item("entry:smoke", "entry", "Smoke bomb", 400),
        _item("entry:lightning", "entry", "Lightning strike", 500), _item("entry:confetti", "entry", "Confetti blast", 500),
        _item("entry:portal", "entry", "Portal", 600), _item("entry:hologram", "entry", "Hologram", 600),
-       _item("entry:hero", "entry", "Hero landing", 800)]
+       _item("entry:hero", "entry", "Hero landing", 800),
+       _item("entry:petals", "entry", "Petal storm", 500)]
 )
 ITEM_BY_ID: Dict[str, dict] = {i["id"]: i for i in ITEMS}
 STARTER_ITEMS: List[str] = [i["id"] for i in ITEMS if i["starter"]]
