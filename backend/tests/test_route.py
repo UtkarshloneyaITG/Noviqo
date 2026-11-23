@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from core.route import (BOT_THROW_S, CAPTURE_S, CENTRE, FINISH, HOP_S, INNER, OUTER, THROW_S, TIMES,
+from core.route import (BOT_THROW_S, CAPTURE_S, CENTRE, FINISH, HOP_S, INNER, OUTER, REACH_S, THROW_S, TIMES,
                         RouteError, RouteMatch, Seat, choose, path_for, rot, score)
 
 
@@ -246,7 +246,7 @@ def test_bots_play_after_a_pause(clock):
     give(m, 1)
     run(m, clock, THROW_S + 0.1)
     m.do_move("p0", 0)
-    run(m, clock, HOP_S + 0.1)
+    run(m, clock, REACH_S + HOP_S + 0.1)
     assert (m.turn, m.phase) == (1, "throw")
     run(m, clock, BOT_THROW_S[0] - 0.2)
     assert "throw" not in kinds(m, "p1")
@@ -274,7 +274,7 @@ def test_animation_pause_after_a_move(clock):
     run(m, clock, THROW_S + 0.1)
     m.do_move("p0", 0)
     assert m.phase == "anim"
-    run(m, clock, 3 * HOP_S - 0.1)
+    run(m, clock, REACH_S + 3 * HOP_S - 0.1)
     assert m.phase == "anim"
     run(m, clock, 0.2)
     assert (m.turn, m.phase) == (1, "throw")
@@ -287,7 +287,7 @@ def test_a_capture_holds_the_pause_longer(clock):
     give(m, 1)
     run(m, clock, THROW_S + 0.1)
     m.do_move("p0", 0)
-    run(m, clock, HOP_S + 0.1)
+    run(m, clock, REACH_S + HOP_S + 0.1)
     assert m.phase == "anim"
     run(m, clock, CAPTURE_S)
     assert (m.turn, m.phase) == (0, "throw")                   # the capture earned another throw
@@ -367,3 +367,7 @@ def test_choose_prefers_capture_then_finish_then_enter(clock):
     assert choose(setup(True, True), "p0") == 1
     assert choose(setup(False, True), "p0") == 2
     assert choose(setup(False, False), "p0") in (0, 3)         # enters a home pawn
+
+
+def test_pause_constants_leave_room_for_the_hands():
+    assert (REACH_S, HOP_S, THROW_S) == (0.3, 0.24, 0.9)

@@ -40,9 +40,10 @@ RULES = ("traditional", "basic")
 TIMES = {"decide": 20.0}     # a human's throw or pick; at zero the match plays it for them
 BOT_THROW_S = (0.8, 1.6)     # bots (and seats played for) act after a human-ish pause
 BOT_MOVE_S = (0.6, 1.2)
-THROW_S = 0.7                # pauses that let everyone watch: the shells tumble and settle,
+THROW_S = 0.9                # pauses that let everyone watch: the shells are flung and settle,
 SPECIAL_S = 0.5              # a 4 or 8 lingers,
-HOP_S = 0.18                 # a pawn hops each square,
+REACH_S = 0.3                # a hand reaches for the pawn,
+HOP_S = 0.24                 # carries it a square at a time,
 CAPTURE_S = 0.6              # a captured pawn flies home
 
 
@@ -258,7 +259,7 @@ class RouteMatch:
                 self.places.append(sid)
                 self._event("placed", seat=sid, place=len(self.places))
         self._settle(sid)
-        self._pause(HOP_S * len(move["path"]) + (CAPTURE_S if move["captures"] else 0.0))
+        self._pause(REACH_S + HOP_S * len(move["path"]) + (CAPTURE_S if move["captures"] else 0.0))
         return move
 
     # ── turn flow ────────────────────────────────────────────────────────
