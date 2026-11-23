@@ -80,8 +80,18 @@ function Experience() {
   const fixed = QUALITY[quality] // undefined on auto: the adaptive values below apply
   const shadows = fixed ? fixed.shadows : true
 
+  // A world switch compiles shaders and loads models: the frame rate dips for a moment.
+  // That's not a slow device, so dips right after a switch don't lower the quality
+  // (each step down resizes the canvas or drops bloom — a visible flash, mid game start).
+  const world = inRoute ? 'route' : inRoles ? 'roles' : inGame ? 'table' : 'lobby'
+  const switchedAt = useRef(0)
+  useEffect(() => {
+    switchedAt.current = performance.now()
+  }, [world])
+
   // ponytail: one-way degrade (resolution first, then post-processing); a reload restores full quality.
   const decline = () => {
+    if (performance.now() - switchedAt.current < 4000) return
     declines.current += 1
     if (declines.current === 1) setDpr(1)
     else setFx(false)
@@ -92,6 +102,9 @@ function Experience() {
       shadows={shadows}
       dpr={[1, fixed ? fixed.dpr : dpr]}
       frameloop={cap ? 'demand' : 'always'}
+      // Phones fire a burst of resizes while full screen or the browser bars animate;
+      // resizing the drawing buffer clears it, so wait for the size to settle (one resize, no flicker).
+      resize={{ debounce: { scroll: 50, resize: 150 } }}
       camera={{ position: [0, 4.6, 10], fov: 46 }}
       gl={{ antialias: false, powerPreference: 'high-performance' }}
     >
