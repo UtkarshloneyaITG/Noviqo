@@ -24,6 +24,7 @@ import ColorPicker from './components/ColorPicker'
 import Summary from './components/Summary'
 import PythonDocs from './components/PythonDocs'
 import RolesHud from './roles/RolesHud'
+import RouteHud from './route/RouteHud'
 import { useDisplay } from './store/display'
 
 // Hold the Game Over modal back briefly so the in-scene 3D win moment
@@ -40,6 +41,7 @@ export default function App() {
   // the root (and with it the whole HUD).
   const status = useAppStore((s) => s.gameState?.status)
   const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
+  const inRoute = useAppStore((s) => !!s.routeState) // at an Ang Mang Chok Chang table
   const isConnected = useAppStore((s) => s.isConnected)
   const showColorPicker = useAppStore((s) => s.showColorPicker)
   const error = useAppStore((s) => s.error)
@@ -97,7 +99,9 @@ export default function App() {
       </div>
 
       {/* ── Screen-space HUD / overlays ────────────────────────────── */}
-      {inRoles ? (
+      {inRoute ? (
+        <RouteHud />
+      ) : inRoles ? (
         <RolesHud />
       ) : !inGame ? (
         <Lobby />

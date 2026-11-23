@@ -1,0 +1,86 @@
+/* Ang Mang Chok Chang: the screen overlay (route/RouteHud) and the name tags
+   over seated players (three/route). Same look as the other tables: dark
+   glass panels, cyan and amber, Big Shoulders Display + Figtree. */
+
+.rt, .rt-tag {
+  --panel: rgba(9, 14, 34, .78); --line: rgba(110, 190, 255, .22);
+  --cyan: #4fd8ff; --amber: #ffc53d; --red: #ff4d6d; --text: #eef3ff; --muted: #8e9bc0;
+  --display: "Big Shoulders Display", Impact, sans-serif; --ui: "Figtree", system-ui, sans-serif;
+  --cut: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  --cut-s: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  font-family: var(--ui); color: var(--text);
+}
+.rt { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+.rt > * { position: absolute; pointer-events: auto; }
+.rt button { font: inherit; color: inherit; border: 0; background: none; }
+.rt :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.rt-panel { background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); clip-path: var(--cut); }
+.rt .rt-btn { height: 36px; padding: 0 16px; font-weight: 800; font-size: 14px; background: rgba(255,255,255,.1); clip-path: var(--cut-s); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.rt .rt-btn:hover { background: rgba(255,255,255,.18); }
+.rt .rt-btn.go { background: var(--cyan); color: #04202b; }
+.rt .rt-btn.danger { background: rgba(255,77,109,.85); color: #fff; }
+.rt .rt-btn.hit { box-shadow: inset 0 0 0 2px var(--amber); }
+.rt-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.35); flex: none; }
+
+.rt-top { top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; }
+.rt-top > * { pointer-events: auto; }
+.rt-title { padding: 8px 14px; display: flex; flex-direction: column; }
+.rt-title b { font-family: var(--display); font-size: 22px; letter-spacing: .02em; }
+.rt-title span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.rt-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.rt-actions > span { font-size: 13px; color: var(--muted); max-width: 260px; text-align: right; }
+
+.rt-prompt { top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 22px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; border-top: 3px solid var(--seat, var(--cyan)); }
+.rt-prompt b { font-family: var(--display); font-size: 26px; }
+.rt-prompt span { color: var(--muted); font-size: 13px; font-weight: 600; }
+.rt-prompt .rt-clock { color: var(--amber); font-weight: 800; font-size: 15px; }
+.rt-prompt .rt-gate { color: var(--amber); font-size: 12px; }
+
+.rt-seats { top: 84px; left: 12px; list-style: none; margin: 0; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; min-width: 210px; }
+.rt-seats li { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 3px 6px; }
+.rt-seats li.turn { background: rgba(79,216,255,.12); }
+.rt-seats li.left { opacity: .55; }
+.rt-seats .nm { flex: 1; font-weight: 700; }
+.rt-seats .ct { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.rt-bottom { left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: calc(100vw - 24px); }
+.rt-throw { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+.rt-throw b { font-family: var(--display); font-size: 30px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.rt-throw b small { font-family: var(--ui); font-size: 11px; color: var(--amber); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.rt-shells { display: flex; gap: 4px; }
+.rt-shell { width: 30px; height: 20px; }
+.rt-shell ellipse { fill: #e9dcc2; stroke: #6b4a24; stroke-width: 1.2; }
+.rt-shell path { fill: none; stroke: #6b4a24; stroke-width: 1.4; }
+.rt-shell.up ellipse { fill: #fff6e4; }
+.rt-extra { color: var(--amber); font-weight: 800; font-size: 13px; }
+.rt-owed { color: var(--muted); font-size: 12px; }
+.rt .rt-throwbtn { height: 52px; padding: 0 44px; font-family: var(--display); font-size: 26px; letter-spacing: .06em; text-transform: uppercase; }
+.rt-moves { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+
+.rt-notes { right: 12px; top: 84px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; pointer-events: none; }
+.rt-note { padding: 8px 14px; font-weight: 700; font-size: 14px; animation: rt-in .25s ease-out; }
+@keyframes rt-in { from { opacity: 0; transform: translateX(12px); } }
+.rt-toast { left: 50%; bottom: 120px; transform: translateX(-50%); padding: 8px 14px; background: rgba(255,77,109,.9); font-weight: 700; clip-path: var(--cut-s); }
+
+.rt-howto { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100vw - 32px)); padding: 18px 22px; }
+.rt-howto h2, .rt-final h2 { font-family: var(--display); font-size: 28px; margin: 0 0 8px; }
+.rt-howto ul { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; line-height: 1.4; }
+
+.rt-final { inset: 0; display: grid; place-items: center; background: rgba(3,5,14,.55); }
+.rt-final > .rt-panel { padding: 20px 26px; width: min(420px, calc(100vw - 32px)); text-align: center; }
+.rt-final ol { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.rt-final li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: rgba(255,255,255,.05); }
+.rt-final li.me { box-shadow: inset 0 0 0 1px var(--cyan); }
+.rt-final li b { font-family: var(--display); font-size: 20px; width: 40px; text-align: left; }
+.rt-final li span { flex: 1; text-align: left; font-weight: 700; }
+.rt-final li small { color: var(--muted); }
+.rt-coins { color: var(--amber); font-weight: 800; font-size: 18px; margin: 0 0 12px; }
+
+.rt-tag { padding: 3px 10px; font-weight: 800; font-size: 13px; white-space: nowrap; background: rgba(9,14,34,.82); clip-path: var(--cut-s); border-bottom: 2px solid var(--seat, var(--cyan)); }
+
+@media (max-height: 500px) {
+  .rt-prompt { top: 56px; padding: 6px 14px; }
+  .rt-prompt b { font-size: 20px; }
+  .rt-seats { top: 64px; min-width: 170px; }
+  .rt .rt-throwbtn { height: 42px; font-size: 20px; }
+}

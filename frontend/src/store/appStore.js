@@ -58,6 +58,7 @@ const ACCOUNT_STATE = {
   leaderboard: null, // last 'leaderboard' reply: { board, scope, rows, me }
   userResults: null, // last 'user_results' reply (Add friend page): { q, users }
   rolesState: null,  // your view of a Raja Mantri Chor Sipahi table (+ deadline: Date.now() ms), or null
+  routeState: null,  // your view of an Ang Mang Chok Chang table (+ deadline: Date.now() ms), or null
   panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|addfriend|invite|games
   playerId: null,
   roomId: null,
@@ -213,6 +214,18 @@ export const useAppStore = create((set, get) => ({
         break
       }
 
+      case 'route_state': {
+        const st = message.state
+        if (!get().routeState) set({ lastRewards: null }) // a new table: no coins from the last one
+        set({ routeState: { ...st, deadline: st.ms_left == null ? null : Date.now() + st.ms_left } })
+        break
+      }
+
+      case 'route_left': {
+        set({ routeState: null, bubbles: {} })
+        break
+      }
+
       case 'user_results': {
         set({ userResults: { q: message.q, users: message.users || [] } })
         break
@@ -279,6 +292,7 @@ export const useAppStore = create((set, get) => ({
       }
 
       case 'game_rewards': {
+        set({ lastRewards: message.rewards || null }) // the results screens show your coins
         const unlocked = message.rewards?.unlocked || []
         if (unlocked.length) set((s) => ({ newItems: [...new Set([...s.newItems, ...unlocked])] }))
         break
@@ -411,6 +425,14 @@ export const useAppStore = create((set, get) => ({
   rolesLeave: () => {
     get().send('roles_leave')
     set({ rolesState: null, bubbles: {} })
+  },
+
+  // Ang Mang Chok Chang: throw the shells, move a pawn, go back to the lobby.
+  routeThrow: () => get().send('route_throw'),
+  routeMove: (pawn) => get().send('route_move', { pawn }),
+  routeLeave: () => {
+    get().send('route_leave')
+    set({ routeState: null, bubbles: {} })
   },
 
   inviteFriend: (id) => {

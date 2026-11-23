@@ -15,6 +15,7 @@ import { useAppStore } from '../store/appStore'
 import TableWorld from './TableWorld'
 import LobbyWorld from './lobby/LobbyWorld'
 import RolesWorld from './roles/RolesWorld'
+import RouteWorld from './route/RouteWorld'
 import { useDisplay, QUALITY } from '../store/display'
 import { capTick } from '../store/frameCap'
 
@@ -69,6 +70,7 @@ function FpsProbe() {
 function Experience() {
   const inGame = useAppStore((s) => s.gameState?.status === 'playing' || s.gameState?.status === 'finished')
   const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
+  const inRoute = useAppStore((s) => !!s.routeState) // at an Ang Mang Chok Chang table
   const [dpr, setDpr] = useState(1.5)
   const [fx, setFx] = useState(true)
   const declines = useRef(0)
@@ -98,7 +100,7 @@ function Experience() {
       <ShadowSwitch on={shadows} />
       {showFps && <FpsProbe />}
 
-      <Suspense fallback={null}>{inRoles ? <RolesWorld /> : inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
+      <Suspense fallback={null}>{inRoute ? <RouteWorld /> : inRoles ? <RolesWorld /> : inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
 
       {/* The composer renders the scene un-tonemapped, so bloom only picks up
           what is truly bright (HDR rims, beams) and never the characters;

@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useAppStore } from '../store/appStore'
 import { useDisplay } from '../store/display'
-import { Coin, GameArt, RolesArt, ItemArt, Modal, USERNAME_RE, normalizeUsername, useItemMap } from './ui'
+import { Coin, GameArt, RolesArt, RouteArt, ItemArt, Modal, USERNAME_RE, normalizeUsername, useItemMap } from './ui'
 
 const KINDS = [
   ['character', 'Characters'],
@@ -302,6 +302,7 @@ function AdminGive() {
 const GAMES = [
   { id: 'uno', name: 'UNO', Art: GameArt, seats: '2–5 players' },
   { id: 'roles', name: 'Raja Mantri Chor Sipahi', Art: RolesArt, seats: '1–4 players, bots fill in' },
+  { id: 'route', name: 'Ang Mang Chok Chang', Art: RouteArt, seats: '1–4 players, bots fill in' },
   { id: 'rummy', name: 'Rummy' },
   { id: 'hearts', name: 'Hearts' },
 ]

@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
 import { LOBBY_EMOTES } from '../three/world/lobbyMotion'
-import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, RolesLogo, SecondsLeft, rankColor, useItemMap } from './ui'
+import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, RolesLogo, RouteLogo, SecondsLeft, rankColor, useItemMap } from './ui'
 import SignIn from './SignIn'
 import Chat from './Chat'
 import { FriendsStrip, FriendsPanel, AddFriend } from './Friends'
@@ -148,7 +148,8 @@ function PlayColumn() {
   const me = members.find((m) => m.id === myId)
   const others = members.slice(1)
   const notReady = others.filter((m) => !m.ready).length
-  const roles = party?.game === 'roles' // Raja Mantri Chor Sipahi: 1–4 people, bots fill the other seats
+  const route = party?.game === 'route' // Ang Mang Chok Chang: 1–4 people, bots fill the other seats
+  const roles = party?.game === 'roles' || route // Raja Mantri Chor Sipahi too: same seating rules
   const bots = 4 - members.length
 
   let start
@@ -194,16 +195,34 @@ function PlayColumn() {
         <div className="lb-panel lb-mode">
           <div className="mrow">
             <div className="glogo">
-              {roles ? <RolesLogo /> : <GameLogo />}
+              {route ? <RouteLogo /> : roles ? <RolesLogo /> : <GameLogo />}
             </div>
-            <div className={`gname ${roles ? 'gname--long' : ''}`}>{roles ? 'Raja Mantri Chor Sipahi' : 'UNO'}</div>
+            <div className={`gname ${roles ? 'gname--long' : ''}`}>{route ? 'Ang Mang Chok Chang' : roles ? 'Raja Mantri Chor Sipahi' : 'UNO'}</div>
             {iLead && (
               <button className="chg" onClick={() => openPanel('games')}>
                 Change game
               </button>
             )}
           </div>
-          {roles ? (
+          {route ? (
+            <>
+              <p className="lb-roles-note">4 seats · 4 pawns each · bots fill empty seats</p>
+              <div className="lb-seg" role="radiogroup" aria-label="Rules">
+                {['traditional', 'basic'].map((r) => (
+                  <button
+                    key={r}
+                    role="radio"
+                    aria-checked={(party.route_rules || 'traditional') === r}
+                    disabled={locked}
+                    className={(party.route_rules || 'traditional') === r ? 'act' : ''}
+                    onClick={() => send('party_set', { route_rules: r })}
+                  >
+                    {r === 'traditional' ? 'Traditional' : 'Basic'}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : roles ? (
             <p className="lb-roles-note">4 seats · 10 rounds · bots fill empty seats</p>
           ) : (
             <>

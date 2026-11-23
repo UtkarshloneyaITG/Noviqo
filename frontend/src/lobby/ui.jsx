@@ -105,6 +105,74 @@ const HAND = [['#d9352c', '3'], ['#e8b417', '9'], [null, ''], ['#2bb24c', '5'], 
 const SPARKS = [[58, 22, 5, '#4fd8ff'], [214, 72, 4, '#ffc53d'], [204, 16, 3, '#fff'], [30, 84, 3, '#ffc53d']]
 
 /** Raja Mantri Chor Sipahi's icon: a rolled chit tied with red thread, under a crown. */
+/** Ang Mang Chok Chang: a 5×5 board with its crossed safe squares and a cowrie shell. */
+export function RouteLogo({ size = 36 }) {
+  const cells = []
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) cells.push([r, c])
+  const safe = ['4,2', '2,4', '0,2', '2,0', '2,2']
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="3" y="3" width="34" height="34" rx="3" fill="#8a5a2b" stroke="#4a2c10" strokeWidth="1.2" />
+      {cells.map(([r, c]) => (
+        <rect key={`${r}${c}`} x={5 + c * 6} y={5 + r * 6} width="5.4" height="5.4" rx=".8" fill="#c99358" />
+      ))}
+      {safe.map((k) => {
+        const [r, c] = k.split(',').map(Number)
+        const x = 7.7 + c * 6
+        const y = 7.7 + r * 6
+        return <path key={k} d={`M${x - 1.8} ${y - 1.8}L${x + 1.8} ${y + 1.8}M${x + 1.8} ${y - 1.8}L${x - 1.8} ${y + 1.8}`} stroke="#4a2c10" strokeWidth="1" />
+      })}
+      <ellipse cx="31" cy="31" rx="6" ry="4.2" fill="#fff6e4" stroke="#6b4a24" strokeWidth="1" transform="rotate(-30 31 31)" />
+      <path d="M27.6 32.6 Q31 30.2 34.4 29.4" stroke="#6b4a24" strokeWidth="1" fill="none" />
+    </svg>
+  )
+}
+
+/** Game-picker art for Ang Mang Chok Chang: the board in perspective, four pawns, cowries mid-throw. */
+export function RouteArt() {
+  const id = useId().replace(/:/g, '')
+  const pawns = [['#ff4d5e', 92, 74], ['#4fa3ff', 146, 66], ['#3df2a0', 128, 88], ['#ffc53d', 108, 58]]
+  return (
+    <svg className="lb-gart" viewBox="0 0 240 120" aria-hidden="true">
+      <defs>
+        <linearGradient id={`${id}s`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#1a0f2e" />
+          <stop offset="1" stopColor="#3a1d3a" />
+        </linearGradient>
+        <linearGradient id={`${id}w`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#c98a4a" />
+          <stop offset="1" stopColor="#7a4a1f" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="120" fill={`url(#${id}s)`} />
+      <path d="M62 104 L88 34 L152 34 L178 104 Z" fill={`url(#${id}w)`} stroke="#3e230c" strokeWidth="1.5" />
+      {[0, 1, 2, 3, 4, 5].map((i) => {
+        const t = i / 5
+        return (
+          <g key={i} stroke="#3e230c" strokeOpacity=".55" strokeWidth="1">
+            <line x1={88 - 26 * t} y1={34 + 70 * t} x2={152 + 26 * t} y2={34 + 70 * t} />
+            <line x1={88 + 12.8 * i} y1="34" x2={62 + 23.2 * i} y2="104" />
+          </g>
+        )
+      })}
+      <path d="M115 64 l10 8 M125 64 l-10 8" stroke="#3e230c" strokeWidth="1.6" />
+      {pawns.map(([c, x, y]) => (
+        <g key={c} transform={`translate(${x} ${y})`}>
+          <ellipse cx="0" cy="9" rx="6" ry="2" fill="#000" opacity=".3" />
+          <path d="M-5 8 Q0 -6 5 8 Z" fill={c} stroke="#000" strokeOpacity=".35" />
+          <circle cx="0" cy="-3" r="3.4" fill={c} stroke="#000" strokeOpacity=".35" />
+        </g>
+      ))}
+      {[[196, 40, -30], [210, 62, 20], [186, 70, 60], [204, 26, -70]].map(([x, y, r]) => (
+        <g key={`${x}${y}`} transform={`translate(${x} ${y}) rotate(${r})`}>
+          <ellipse rx="8" ry="5.4" fill="#fff6e4" stroke="#6b4a24" strokeWidth="1" />
+          <path d="M-5 1 Q0 -1.6 5 1" stroke="#6b4a24" strokeWidth="1" fill="none" />
+        </g>
+      ))}
+    </svg>
+  )
+}
+
 export function RolesLogo({ size = 36 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
