@@ -324,12 +324,13 @@ function EventBanner() {
       ),
     },
     {
-      panel: 'games', // opens Change game, where the new game is listed
-      title: 'New game is arriving',
-      text: 'Play now.',
+      panel: 'games',
+      title: 'Ang Mang Chok Chang',
+      text: 'New game has arrived. Tap to play.',
       art: (
         <div className="emb">
-          <RolesLogo size={84} />
+          <span className="tagnew">New</span>
+          <RouteLogo size={84} />
         </div>
       ),
     },

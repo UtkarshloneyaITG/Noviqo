@@ -1,17 +1,21 @@
 /**
- * News — a one-time announcement popup in the lobby. Shown a moment after
- * the lobby appears, once per browser: Play now (opens Change game) or Later
- * both dismiss it for good. Bump NEWS_ID for the next announcement.
+ * News — one-time announcement popups in the lobby, newest first. A moment
+ * after the lobby appears it shows the first one this browser hasn't seen;
+ * Play now (opens Change game) or Later dismisses it for good, and the next
+ * one waits for the next visit. Add an entry at the top for a new announcement.
  */
 import { useEffect, useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { Modal, RolesArt } from './ui'
+import { Modal, RolesArt, RouteArt } from './ui'
 
-const NEWS_ID = 'nq.news.new-game-1'
+const NEWS = [
+  { id: 'nq.news.route-1', title: 'Ang Mang Chok Chang has arrived', text: 'A new game is here. Play now.', Art: RouteArt },
+  { id: 'nq.news.new-game-1', title: 'Raja Mantri Chor Sipahi has arrived', text: 'A new game is here. Play now.', Art: RolesArt },
+]
 
-function seen() {
+function seen(id) {
   try {
-    return localStorage.getItem(NEWS_ID) === '1'
+    return localStorage.getItem(id) === '1'
   } catch {
     return false // storage blocked: show it, it just can't be remembered
   }
@@ -20,28 +24,30 @@ function seen() {
 export default function News() {
   const panel = useAppStore((s) => s.panel)
   const openPanel = useAppStore((s) => s.openPanel)
-  const [open, setOpen] = useState(false)
+  const [item, setItem] = useState(null)
 
   useEffect(() => {
-    if (seen()) return
-    const id = setTimeout(() => setOpen(true), 1200)
-    return () => clearTimeout(id)
+    const next = NEWS.find((n) => !seen(n.id))
+    if (!next) return
+    const t = setTimeout(() => setItem(next), 1200)
+    return () => clearTimeout(t)
   }, [])
 
   const dismiss = () => {
     try {
-      localStorage.setItem(NEWS_ID, '1')
+      localStorage.setItem(item.id, '1')
     } catch {
       /* not remembered; fine */
     }
-    setOpen(false)
+    setItem(null)
   }
 
-  if (!open || panel) return null // never on top of another panel
+  if (!item || panel) return null // never on top of another panel
+  const { Art } = item
   return (
-    <Modal title="New game is arriving" onClose={dismiss} className="lb-news">
-      <RolesArt />
-      <p className="lb-news-text">Play now.</p>
+    <Modal title={item.title} onClose={dismiss} className="lb-news">
+      <Art />
+      <p className="lb-news-text">{item.text}</p>
       <div className="lb-news-act">
         <button className="lb-btn no" onClick={dismiss}>
           Later
