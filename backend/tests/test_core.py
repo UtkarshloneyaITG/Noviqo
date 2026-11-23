@@ -157,8 +157,10 @@ class TestLobby:
     def test_start_game_deals_7_cards(self):
         g = make_game("A", "B")
         g.start_game()
-        for p in g.players:
-            assert len(p.hand) == 7
+        # An opening Draw Two makes the first player draw 2 more (official rule).
+        opening_draw_two = g.discard_pile[-1].card_type == CardType.DRAW_TWO
+        for i, p in enumerate(g.players):
+            assert len(p.hand) == 7 + (2 if opening_draw_two and i == 0 else 0)
 
     def test_start_card_is_not_wild(self):
         for _ in range(20):   # repeat because deck is shuffled

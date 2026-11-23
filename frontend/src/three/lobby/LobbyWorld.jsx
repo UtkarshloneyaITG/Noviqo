@@ -15,7 +15,8 @@ import { useCharacterModel, DEFAULT_CHARACTER } from '../world/characters'
 import { animateFigure, LOBBY_EMOTES } from '../world/lobbyMotion'
 import { glowTexture, beamMaterial, PALETTE } from '../world/sky'
 import LobbyBackdrop from '../world/LobbyBackdrop'
-import Entrance from '../world/Entrance'
+import Entrance, { EntranceLight, SHAKE, useEntranceFigure } from '../world/Entrance'
+import { prewarmEntranceTextures } from '../world/entranceFx'
 import { Crest, rankColor } from '../../lobby/ui'
 
 // Leader front and centre, two flanks, two far spots (max party of 5).
@@ -47,6 +48,17 @@ function Camera() {
     camera.lookAt(-0.55, 1.12, 0)
     camera.updateProjectionMatrix()
   }, [camera, z])
+  // Impacts in your own entrance (landings, lightning) shake the view a little.
+  const shaking = useRef(false)
+  useFrame(() => {
+    const a = SHAKE.amount
+    SHAKE.amount = 0
+    if (!a && !shaking.current) return
+    shaking.current = a > 0
+    const t = performance.now() / 1000
+    camera.position.set(-0.55 + a * Math.sin(t * 91), 1.3 + a * Math.sin(t * 77 + 1), z)
+    camera.lookAt(-0.55, 1.12, 0)
+  })
   return null
 }
 
@@ -67,7 +79,7 @@ function pedestalMaterials(color) {
   })
 }
 
-function Pedestal({ x, z, color }) {
+export function Pedestal({ x, z, color }) {
   const m = pedestalMaterials(color)
   return (
     <group position={[x, 0, z]} dispose={null}>
@@ -79,12 +91,15 @@ function Pedestal({ x, z, color }) {
   )
 }
 
-function Figure({ character, memberId, x, z, phase, y = H, yaw = -x * 0.08 }) {
+export function Figure({ character, memberId, x, z, phase, y = H, yaw = -x * 0.08 }) {
   const model = useCharacterModel(character, 'stand')
   const emote = useAppStore((s) => s.emotes[memberId])
+  const entrance = useEntranceFigure(model) // inside an <Entrance>: its body pose + materialise effect
   const lift = useRef()
   useFrame(({ clock }) => {
-    const dy = animateFigure(model, reduce ? 0 : clock.elapsedTime, phase, emote, performance.now())
+    const now = performance.now()
+    const dy = animateFigure(model, reduce ? 0 : clock.elapsedTime, phase, emote, now, entrance.pose(now))
+    entrance.reveal(now)
     lift.current.position.y = reduce ? 0 : dy
   })
   return (
@@ -221,7 +236,12 @@ function Party() {
   const members = party?.members?.length ? party.members : [me]
   const iLead = (party?.leader_id ?? me.id) === me.id
 
-  return SPOTS.slice(0, party?.max ?? 5).map(([x, z], i) => {
+  useEffect(() => {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500))
+    idle(prewarmEntranceTextures)
+  }, [])
+
+  const spots = SPOTS.slice(0, party?.max ?? 5).map(([x, z], i) => {
     const m = members[i]
     const lead = i === 0
     if (!m) {
@@ -242,13 +262,13 @@ function Party() {
           {/* Entrance plays as the figure appears (its origin is the pedestal top) */}
           {m.id === me.id ? (
             <Spinnable x={x} z={z}>
-              <Entrance id={me.entry} preview={entryPreview}>
+              <Entrance id={me.entry} who={m.id} preview={entryPreview} mine>
                 <Figure character={m.character} memberId={m.id} x={0} z={0} y={0} yaw={0} phase={i * 1.7} />
               </Entrance>
             </Spinnable>
           ) : (
             <group position={[x, H, z]} rotation-y={-x * 0.08}>
-              <Entrance id={m.entry}>
+              <Entrance id={m.entry} who={m.id}>
                 <Figure character={m.character} memberId={m.id} x={0} z={0} y={0} yaw={0} phase={i * 1.7} />
               </Entrance>
             </group>
@@ -265,6 +285,12 @@ function Party() {
       </group>
     )
   })
+  return (
+    <>
+      <EntranceLight />
+      {spots}
+    </>
+  )
 }
 
 /** Signed out: one pedestal showing the starter being picked. */

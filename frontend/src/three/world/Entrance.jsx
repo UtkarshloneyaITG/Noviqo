@@ -44,6 +44,8 @@ const ARMS = {
   fistDown: [[0.25, -0.8, 0.55], [0.05, -1, 0.2]],
   back: [[0.7, 0.2, -0.65], [0.8, 0.35, -0.5]],
   forward: [[0.15, -0.15, 1], [0.05, 0.05, 1]],
+  hips: [[0.85, -0.55, 0.05], [-0.65, -0.65, 0.35]], // hands on hips, elbows out
+  sweep: [[0.45, 0.35, -0.8], [0.5, 0.45, -0.75]], // flung back behind the body
 }
 /** Both arms (or one) from pose A toward pose B by k. */
 function arms(c, a, b = a, k = 1, sides = 'lr') {
@@ -60,6 +62,18 @@ function crouch(c, a, lean = 0.6) {
   c.bend('abdomen', 'x', a * lean * 0.5)
   c.bend('chest', 'x', a * lean * 0.3)
   c.lift -= LEG * (1 - Math.cos(a))
+}
+/** Superhero landing: front foot planted, back knee down on its toes, leaning in. */
+function kneel(c, k, front = 'l', back = 'r') {
+  if (k <= 0) return
+  c.bend('upperleg' + front, 'x', -1.45 * k)
+  c.bend('lowerleg' + front, 'x', 1.45 * k)
+  c.bend('upperleg' + back, 'x', -0.25 * k)
+  c.bend('lowerleg' + back, 'x', 1.75 * k)
+  c.bend('foot' + back, 'x', 0.6 * k)
+  c.bend('abdomen', 'x', 0.4 * k)
+  c.bend('chest', 'x', 0.3 * k)
+  c.lift -= 0.43 * k
 }
 /** Legs pulled up under the body (mid-air). */
 function tuck(c, k) {
@@ -91,7 +105,7 @@ export const ENTRANCES = {
 
   'entry:skydrop': {
     secs: 2.1,
-    motion: (p) => ({ y: 7 * (1 - easeIn(seg(p, 0, 0.42))) }),
+    motion: (p) => ({ y: 4.5 * (1 - easeIn(seg(p, 0, 0.42))) }),
     body: (p, c) => {
       if (p < 0.42) {
         arms(c, 'skydive')
@@ -99,9 +113,11 @@ export const ENTRANCES = {
         c.bend('head', 'x', -0.25)
         return
       }
-      const k = hold(p, 0.42, 0.92, 0.2)
+      const k = hold(p, 0.42, 0.8, 0.15) // land in a deep crouch…
       crouch(c, 1.0 * k)
-      arms(c, 'rest', 'balance', k)
+      const proud = hold(p, 0.72, 1, 0.3) // …stand up, hands on hips
+      if (proud > 0 && k < 0.6) arms(c, 'rest', 'hips', proud)
+      else arms(c, 'rest', 'balance', k)
     },
     light: (p) => ({ color: C.gold, intensity: 9 * bump(seg(p, 0.42, 0.62)), y: 0.6 }),
     shake: (p) => 0.07 * (1 - seg(p, 0.42, 0.58)) * (p > 0.42 ? 1 : 0),
@@ -111,7 +127,7 @@ export const ENTRANCES = {
       <Cracks key="cracks" {...P} a={0.42} b={1} color="#ff9a3c" />,
       <Puffs key="dust" {...P} a={0.42} b={1} color="#c9b79a" spread={1.7} size={1} n={16} ground opacity={0.7} />,
       <Sparks key="sparks" {...P} mode="burst" a={0.42} b={0.8} color={C.gold} n={45} />,
-      <Flash key="flash" {...P} a={0.42} b={0.55} color="#ffe7c4" size={5} y={0.3} />,
+      <Flash key="flash" {...P} a={0.42} b={0.55} color="#ffe7c4" size={4} y={0.3} />,
     ],
   },
 
@@ -129,7 +145,7 @@ export const ENTRANCES = {
       <Runes key="runes" {...P} a={0} b={0.95} color={C.cyan} size={2.2} />,
       <Beam key="beam" {...P} a={0.05} b={0.85} color={C.cyan} h={5} r={0.6} />,
       <Sparks key="sparks" {...P} a={0.15} b={0.95} color={C.ice} n={60} />,
-      <Flash key="flash" {...P} a={0.2} b={0.32} color="#bff4ff" size={4} y={1} />,
+      <Flash key="flash" {...P} a={0.2} b={0.32} color="#bff4ff" size={3} y={1} />,
       <Shockwave key="ring" {...P} a={0.2} b={0.6} color={C.cyan} />,
     ],
   },
@@ -143,10 +159,11 @@ export const ENTRANCES = {
         c.bend('head', 'x', 0.22)
         return
       }
-      const k = hold(p, 0.62, 1, 0.12)
-      arms(c, 'cross', 'open', easeOut(seg(p, 0.62, 0.7)) * k + (1 - k) * 0)
-      if (k < 1 && p > 0.8) arms(c, 'rest', 'open', k)
-      c.bend('head', 'x', -0.15 * k)
+      const burst = easeOut(seg(p, 0.62, 0.7)) // arms fly open…
+      const settle = easeIn(seg(p, 0.86, 1)) // …then come down to rest
+      if (settle > 0) arms(c, 'open', 'rest', settle)
+      else arms(c, 'cross', 'open', burst)
+      c.bend('head', 'x', -0.15 * (1 - settle))
     },
     light: (p) => ({ color: C.amber, intensity: 4 * bump(p) + 6 * bump(seg(p, 0.62, 0.75)), y: 1 }),
     shake: (p) => (p > 0.62 && p < 0.7 ? 0.035 : 0),
@@ -199,16 +216,16 @@ export const ENTRANCES = {
     motion: (p) => ({ show: p > 0.2, s: 1 + 0.06 * (1 - seg(p, 0.2, 0.4)) }),
     reveal: (p) => ({ cut: easeOut(seg(p, 0.2, 0.3)), color: C.storm, glow: 4 }),
     body: (p, c) => {
-      const land = hold(p, 0.2, 0.5, 0.3)
+      const land = hold(p, 0.2, 0.5, 0.3) // crouched from the strike…
       crouch(c, 0.8 * land)
-      const flex = hold(p, 0.48, 0.95, 0.25)
-      arms(c, 'balance', 'flex', flex)
-      if (flex === 0) arms(c, 'rest', 'balance', land)
+      const flex = hold(p, 0.5, 0.95, 0.25) // …then up into a flex, then rest
+      if (flex > 0) arms(c, 'rest', 'flex', flex)
+      else arms(c, 'rest', 'balance', land)
     },
     light: (p) => ({ color: C.storm, intensity: 16 * bump(seg(p, 0.12, 0.42)) + 2 * bump(p), y: 1.4 }),
     shake: (p) => (p > 0.2 && p < 0.38 ? 0.08 * (1 - seg(p, 0.2, 0.38)) : 0),
     fx: (P) => [
-      <Flash key="flash" {...P} a={0.12} b={0.42} color="#dfeeff" size={11} y={2} />,
+      <Flash key="flash" {...P} a={0.12} b={0.42} color="#dfeeff" size={5} y={2} />,
       <Lightning key="bolts" {...P} a={0.1} b={0.32} color={C.storm} />,
       <Cracks key="cracks" {...P} a={0.2} b={1} color="#7fb2ff" />,
       <Shockwave key="ring" {...P} a={0.2} b={0.7} color="#9fc7ff" />,
@@ -232,7 +249,7 @@ export const ENTRANCES = {
       <Confetti key="confetti" {...P} a={0.03} b={1} />,
       <Shockwave key="ring" {...P} a={0.03} b={0.4} color={C.pink} />,
       <Sparks key="sparks" {...P} mode="burst" a={0.03} b={0.5} color={C.gold} n={40} />,
-      <Flash key="flash" {...P} a={0.03} b={0.15} color="#ffd6ef" size={4} y={1} />,
+      <Flash key="flash" {...P} a={0.03} b={0.15} color="#ffd6ef" size={3} y={1} />,
     ],
   },
 
@@ -244,9 +261,9 @@ export const ENTRANCES = {
       const ph = seg(p, 0.25, 0.75) * Math.PI * 4 // two strides
       for (const [s, sign] of [['l', 1], ['r', -1]]) {
         const swing = Math.sin(ph) * sign * walking
-        c.bend('upperleg' + s, 'x', -0.45 * swing)
-        c.bend('lowerleg' + s, 'x', 0.5 * Math.max(0, swing) * walking + 0.15 * walking)
-        c.arm(s, mix(ARMS.rest[0], [0.15, -1, 0.45 * swing], walking), ARMS.rest[1])
+        c.bend('upperleg' + s, 'x', -0.6 * swing)
+        c.bend('lowerleg' + s, 'x', (0.75 * Math.max(0, -swing) + 0.15) * walking) // trailing knee bends
+        c.arm(s, mix(ARMS.rest[0], [0.15, -0.95, -0.6 * swing], walking), mix(ARMS.rest[1], [0.1, -0.7, 0.7], walking))
       }
     },
     light: (p) => ({ color: C.violet, intensity: 4.5 * bump(p), y: 1.1 }),
@@ -262,18 +279,22 @@ export const ENTRANCES = {
     secs: 2.4,
     motion: (p) => {
       const glitch = p < 0.7 && Math.sin(p * 61) > 0.82
-      return { show: p > 0.7 || Math.sin(p * 97) + Math.sin(p * 41) > 1.5 - 2.6 * p, x: glitch ? 0.07 * Math.sign(Math.sin(p * 173)) : 0 }
+      const dropout = p < 0.08 || (p < 0.7 && Math.sin(p * 151) > 0.82)
+      return { show: !dropout, x: glitch ? 0.07 * Math.sign(Math.sin(p * 173)) : 0 }
     },
     reveal: (p) => (p < 0.85 ? { cut: easeOut(seg(p, 0, 0.6)), color: C.cyan, glow: 2.2, holo: true } : null),
     body: (p, c) => {
       const k = hold(p, 0, 0.9, 0.15)
       arms(c, 'rest', 'palms', 0.6 * k)
-      if (p < 0.7 && Math.sin(p * 61) > 0.82) c.bend('head', 'z', 0.25)
+      if (p < 0.7 && Math.sin(p * 61) > 0.82) {
+        c.bend('head', 'z', 0.25)
+        arms(c, 'palms', 'out', 0.5, 'l') // glitch twitch
+      }
     },
     light: (p) => ({ color: C.cyan, intensity: 2.6 * (0.6 + 0.4 * Math.sin(p * 80)) * bump(p), y: 1.1 }),
     fx: (P) => [
       <Runes key="runes" {...P} a={0} b={0.95} color={C.cyan} size={2} />,
-      <ScanRing key="scan" {...P} a={0} b={0.75} color={C.cyan} sweeps={3} />,
+      <ScanRing key="scan" {...P} a={0} b={0.75} color={C.cyan} sweeps={2} />,
       <Sparks key="sparks" {...P} a={0.1} b={0.8} color={C.ice} n={40} />,
       <Shockwave key="ring" {...P} a={0.75} b={1} color={C.cyan} />,
     ],
@@ -283,7 +304,7 @@ export const ENTRANCES = {
     secs: 2.4,
     motion: (p) => {
       const q = seg(p, 0, 0.38)
-      return { z: -4 * (1 - q), y: 5 * (1 - easeIn(q)), ry: -0.8 * (1 - q) }
+      return { z: -2.6 * (1 - q), y: 3.4 * (1 - q) ** 1.6 + 0.6 * bump(q), ry: -0.8 * (1 - q) }
     },
     body: (p, c) => {
       if (p < 0.38) {
@@ -292,11 +313,15 @@ export const ENTRANCES = {
         tuck(c, 0.8)
         return
       }
-      const k = hold(p, 0.38, 0.95, 0.2)
-      crouch(c, 1.25 * k, 0.9)
-      arms(c, 'rest', 'fistDown', k, 'r')
-      arms(c, 'rest', 'back', k, 'l')
-      c.bend('head', 'x', -0.35 * k)
+      const k = hold(p, 0.38, 0.8, 0.12) // slam down on one knee, fist to the ground…
+      kneel(c, k)
+      c.bend('head', 'x', -0.4 * k)
+      const proud = hold(p, 0.72, 1, 0.3) // …rise into hands on hips
+      if (proud > 0 && k < 0.6) arms(c, 'rest', 'hips', proud)
+      else {
+        arms(c, 'rest', 'fistDown', k, 'r')
+        arms(c, 'rest', 'sweep', k, 'l')
+      }
     },
     light: (p) => ({ color: C.gold, intensity: 11 * bump(seg(p, 0.38, 0.6)) + 2 * bump(p), y: 0.5 }),
     shake: (p) => (p > 0.38 && p < 0.55 ? 0.09 * (1 - seg(p, 0.38, 0.55)) : 0),
@@ -306,7 +331,7 @@ export const ENTRANCES = {
       <Cracks key="cracks" {...P} a={0.38} b={1} color="#ff8a1e" />,
       <Puffs key="dust" {...P} a={0.38} b={1} color="#c9b79a" spread={1.8} size={1.1} n={16} ground opacity={0.7} />,
       <Sparks key="sparks" {...P} mode="burst" a={0.38} b={0.75} color={C.gold} n={55} />,
-      <Flash key="flash" {...P} a={0.38} b={0.5} color="#fff1d0" size={6} y={0.3} />,
+      <Flash key="flash" {...P} a={0.38} b={0.5} color="#fff1d0" size={4} y={0.3} />,
     ],
   },
 }
@@ -318,7 +343,9 @@ const REST = { x: 0, y: 0, z: 0, s: 1, sy: 1, ry: 0, show: true }
 const LIGHT = { intensity: 0, color: new THREE.Color(), pos: new THREE.Vector3() }
 export const SHAKE = { amount: 0 } // LobbyWorld's camera reads and clears it each frame
 
-/** The one point light every entrance flashes (rendered once in the lobby). */
+/** The one point light every entrance flashes (rendered once in the lobby).
+ *  ponytail: always mounted (intensity 0 when idle) — adding/removing a light recompiles every
+ *  lit shader, which hitches; the cost is one extra point light per lit pixel in the lobby. */
 export function EntranceLight() {
   const ref = useRef()
   useFrame(() => {
@@ -389,6 +416,10 @@ export function useEntranceFigure(model) {
     })
     return u
   }, [model]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!U) return
+    return () => model.root.traverse((o) => o.isMesh && [].concat(o.material).forEach((m) => m.dispose()))
+  }, [U, model])
   const base = useMemo(() => new THREE.Vector3(), [])
 
   return {
@@ -421,9 +452,15 @@ function applyMotion(group, o) {
   group.visible = o.show
 }
 
-export default function Entrance({ id, preview, mine = false, progress, children }) {
+const SHOWN = new Set() // members whose entrance already played this session (equip/preview still replay)
+
+export default function Entrance({ id, who, preview, mine = false, progress, children }) {
   const born = useRef(performance.now())
-  const [run, setRun] = useState(() => ({ id, t0: performance.now(), n: 0 }))
+  const seen = who != null && SHOWN.has(who) // back from a match: everyone's already in, no re-run
+  const [run, setRun] = useState(() => ({ id, t0: seen ? -1e9 : performance.now(), n: 0 }))
+  useEffect(() => {
+    if (who != null) SHOWN.add(who)
+  }, [who])
   const first = useRef(true)
   useEffect(() => {
     if (first.current) return void (first.current = false)
@@ -439,11 +476,11 @@ export default function Entrance({ id, preview, mine = false, progress, children
   const ctx = useMemo(() => live, [])
   const group = useRef()
   const prog = useRef(0)
-  const [done, setDone] = useState(reduce && progress == null)
+  const [done, setDone] = useState(() => progress == null && (reduce || seen))
   const world = useMemo(() => new THREE.Vector3(), [])
 
   useLayoutEffect(() => {
-    setDone(reduce && progress == null)
+    setDone(progress == null && progressOf(live.current, performance.now()) >= 1)
     if (group.current) applyMotion(group.current, { ...REST, ...(def.motion?.(progressOf(live.current, performance.now())) || {}) })
   }, [run]) // eslint-disable-line react-hooks/exhaustive-deps
 

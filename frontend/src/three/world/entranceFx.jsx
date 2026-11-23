@@ -316,7 +316,6 @@ export function Portal({ a, b, prog, inner, outer, z = -1.15 }) {
     }
     mat.uniforms.uTime.value = st.clock.elapsedTime
     mat.uniforms.uOpacity.value = Math.min(1, open)
-    rim.current.rotation.z += 0.05
   })
   return (
     <group position={[0, 1.05, z]}>
@@ -329,11 +328,11 @@ export function Portal({ a, b, prog, inner, outer, z = -1.15 }) {
 /** A big soft flash of light. */
 export function Flash({ a, b, prog, color = '#eaf3ff', size = 8, y = 1.2 }) {
   const ref = useRef()
-  const mat = useOwned(() => new THREE.SpriteMaterial({ map: glowTexture(), color: hdr(color, 2), ...additive, opacity: 0 }))
+  const mat = useOwned(() => new THREE.SpriteMaterial({ map: glowTexture(), color: hdr(color, 1.3), ...additive, opacity: 0 }))
   useFrame(() => {
     const t = seg(prog.current, a, b)
     ref.current.visible = t > 0 && t < 1
-    mat.opacity = t < 0.15 ? t / 0.15 : (1 - t) ** 2
+    mat.opacity = 0.6 * (t < 0.15 ? t / 0.15 : (1 - t) ** 2) // a flash, not a white-out
   })
   return <sprite ref={ref} material={mat} position-y={y} scale={[size, size, 1]} visible={false} />
 }
@@ -467,7 +466,7 @@ export function Lightning({ a, b, prog, color = '#cfe6ff' }) {
   const STEPS = 14
   const bolts = useOwned(
     () => {
-      const mat = new THREE.MeshBasicMaterial({ color: hdr(color, 4), ...additive })
+      const mat = new THREE.MeshBasicMaterial({ color: hdr(color, 2.6), ...additive })
       return [0.07, 0.035, 0.03].map((w) => {
         const g = new THREE.BufferGeometry()
         g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(STEPS * 2 * 3), 3))
@@ -557,12 +556,17 @@ export function SpeedLines({ a, b, prog, color = '#ffffff', n = 12 }) {
 /** A bright ring sweeping up the figure (hologram scan). */
 export function ScanRing({ a, b, prog, color = '#4fd8ff', sweeps = 2 }) {
   const ref = useRef()
-  const mat = useOwned(() => new THREE.MeshBasicMaterial({ color: hdr(color, 3), ...additive }))
+  const mat = useOwned(() => new THREE.MeshBasicMaterial({ color: hdr(color, 2), ...additive }))
   useFrame(() => {
     const t = seg(prog.current, a, b)
     ref.current.visible = t > 0 && t < 1
     ref.current.position.y = 1.95 * ((t * sweeps) % 1)
     mat.opacity = envelope(t, 0.05, 0.25)
   })
-  return <mesh ref={ref} geometry={TORUS} material={mat} rotation-x={Math.PI / 2} scale={[0.5, 0.5, 2]} visible={false} />
+  return <mesh ref={ref} geometry={TORUS} material={mat} rotation-x={Math.PI / 2} scale={[0.55, 0.55, 0.6]} visible={false} />
+}
+
+/** Paint the effect textures ahead of time (lobby idle), so the first entrance doesn't hitch. */
+export function prewarmEntranceTextures() {
+  for (const t of [runeTexture, crackTexture, ringTexture, smokeTexture, streakTexture]) t()
 }
