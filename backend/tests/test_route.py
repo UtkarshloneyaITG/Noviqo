@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
-from core.route import CENTRE, FINISH, INNER, OUTER, RouteError, RouteMatch, Seat, path_for, rot, score
+from core.route import (BOT_THROW_S, CAPTURE_S, CENTRE, FINISH, HOP_S, INNER, OUTER, THROW_S, TIMES,
+                        RouteError, RouteMatch, Seat, choose, path_for, rot, score)
 
 
 class Clock:
@@ -28,9 +29,17 @@ def clock():
     return Clock()
 
 
-def make(clock, bots=0, rules="traditional", seed=7, **kw):
+def make(clock, bots=0, rules="traditional", seed=7, pauses=False, **kw):
+    """Rules tests run without animation pauses; the clock tests turn them on."""
     seats = [Seat(f"p{i}", f"P{i}", "char:m-Casual", bot=i >= 4 - bots) for i in range(4)]
-    return RouteMatch(seats, rules=rules, clock=clock, rng=random.Random(seed), **kw)
+    return RouteMatch(seats, rules=rules, clock=clock, rng=random.Random(seed), pauses=pauses, **kw)
+
+
+def run(m, clock, secs, step=0.1):
+    """Let `secs` of match time pass, ticking as the server would."""
+    for _ in range(int(round(secs / step))):
+        clock.t += step
+        m.tick()
 
 
 FACES = {1: (1, 0, 0, 0), 2: (1, 1, 0, 0), 3: (1, 1, 1, 0), 4: (1, 1, 1, 1), 8: (0, 0, 0, 0)}
@@ -212,3 +221,141 @@ def test_places_and_last_player(clock):
         give(m, 1)
         m.do_move(sid, 3)
     assert m.places == ["p0", "p1", "p2", "p3"] and m.finished
+
+
+# ── the clock, bots, leaving and the end ─────────────────────────────────
+
+def kinds(m, seat=None):
+    return [e["kind"] for e in m.events if seat is None or e.get("seat") == seat]
+
+
+def test_humans_get_twenty_seconds_then_the_match_acts_for_them(clock):
+    m = make(clock, pauses=True)
+    put(m, "p0", 0, 2)                                         # any throw has a legal move
+    run(m, clock, TIMES["decide"] - 0.5)
+    assert "throw" not in kinds(m, "p0")
+    run(m, clock, 1.0)
+    assert "throw" in kinds(m, "p0")
+    run(m, clock, TIMES["decide"] + 2)
+    assert "moved" in kinds(m, "p0")
+
+
+def test_bots_play_after_a_pause(clock):
+    m = make(clock, bots=3, pauses=True)
+    put(m, "p0", 0, 2)
+    give(m, 1)
+    run(m, clock, THROW_S + 0.1)
+    m.do_move("p0", 0)
+    run(m, clock, HOP_S + 0.1)
+    assert (m.turn, m.phase) == (1, "throw")
+    run(m, clock, BOT_THROW_S[0] - 0.2)
+    assert "throw" not in kinds(m, "p1")
+    run(m, clock, BOT_THROW_S[1] - BOT_THROW_S[0] + 0.4)
+    assert "throw" in kinds(m, "p1")
+
+
+@pytest.mark.parametrize("seed", range(30))
+def test_bots_only_ever_make_legal_moves_and_games_end(clock, seed):
+    seats = [Seat("p0", "P0", "c", connected=False)] + [Seat(f"b{i}", f"B{i}", "c", bot=True) for i in range(3)]
+    m = RouteMatch(seats, clock=clock, rng=random.Random(seed))
+    for _ in range(400_000):                                   # do_move raises on an illegal pick
+        clock.t += 0.2
+        m.tick()
+        if m.finished:
+            break
+    assert m.finished and len(m.places) == 4
+
+
+def test_animation_pause_after_a_move(clock):
+    m = make(clock, pauses=True)
+    put(m, "p0", 0, 1)
+    give(m, 3)
+    assert m.phase == "anim"
+    run(m, clock, THROW_S + 0.1)
+    m.do_move("p0", 0)
+    assert m.phase == "anim"
+    run(m, clock, 3 * HOP_S - 0.1)
+    assert m.phase == "anim"
+    run(m, clock, 0.2)
+    assert (m.turn, m.phase) == (1, "throw")
+
+
+def test_a_capture_holds_the_pause_longer(clock):
+    m = make(clock, pauses=True)
+    put(m, "p0", 0, 0)
+    put(m, "p1", 0, 13)
+    give(m, 1)
+    run(m, clock, THROW_S + 0.1)
+    m.do_move("p0", 0)
+    run(m, clock, HOP_S + 0.1)
+    assert m.phase == "anim"
+    run(m, clock, CAPTURE_S)
+    assert (m.turn, m.phase) == (0, "throw")                   # the capture earned another throw
+
+
+def test_disconnected_or_left_seats_are_played_for(clock):
+    m = make(clock, pauses=True)
+    m.set_connected("p0", False)
+    run(m, clock, BOT_THROW_S[1] + 0.2)
+    assert "throw" in kinds(m, "p0")
+    m = make(clock, pauses=True)
+    m.set_connected("p0", False)
+    m.set_connected("p0", True)
+    assert m.state_for("p0")["ms_left"] > (TIMES["decide"] - 1) * 1000
+    m.leave("p1")
+    assert m.seat("p1").auto
+
+
+def test_match_ends_when_no_human_is_still_racing(clock):
+    m = make(clock, bots=3)
+    for i in range(3):
+        put(m, "p0", i, FINISH)
+    put(m, "p0", 3, 23)
+    put(m, "p1", 0, FINISH)
+    put(m, "p1", 1, FINISH)
+    put(m, "p2", 0, FINISH)
+    give(m, 1)
+    m.do_move("p0", 3)
+    assert m.finished
+    assert [r["id"] for r in m.standings()] == ["p0", "p1", "p2", "p3"]
+
+
+def test_human_place_is_reported_once_when_fixed(clock):
+    m = make(clock, bots=3)
+    for i in range(3):
+        put(m, "p0", i, FINISH)
+    put(m, "p0", 3, 23)
+    give(m, 1)
+    m.do_move("p0", 3)
+    assert m.newly_placed() == ["p0"] and m.newly_placed() == []
+
+
+def test_state_for_shows_moves_only_to_the_seat_to_act(clock):
+    m = make(clock)
+    give(m, 4)
+    assert m.state_for("p0")["moves"] and m.state_for("p1")["moves"] == []
+    st = m.state_for("p1")
+    assert len(st["seats"]) == 4 and st["seats"][0]["colour"] == "red" and st["last"]["value"] == 4
+
+
+def test_events_carry_increasing_seq(clock):
+    m = make(clock)
+    give(m, 4)
+    m.do_move("p0", 0)
+    seqs = [e["seq"] for e in m.events]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
+
+
+def test_choose_prefers_capture_then_finish_then_enter(clock):
+    def setup(capture, finish):
+        m = make(clock)
+        put(m, "p0", 1, 1)                                     # 1 + 4 = 5: a capture if seat 1 is there
+        if capture:
+            put(m, "p1", 0, 1)
+        if finish:
+            put(m, "p0", 2, 20)                                # 20 + 4 = 24: finishes
+        give(m, 4)
+        return m
+    assert choose(setup(True, True), "p0") == 1
+    assert choose(setup(False, True), "p0") == 2
+    assert choose(setup(False, False), "p0") in (0, 3)         # enters a home pawn

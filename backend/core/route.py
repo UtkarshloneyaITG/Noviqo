@@ -37,6 +37,13 @@ PAWNS = 4
 LAST_OUTER = 15
 FINISH = 24
 RULES = ("traditional", "basic")
+TIMES = {"decide": 20.0}     # a human's throw or pick; at zero the match plays it for them
+BOT_THROW_S = (0.8, 1.6)     # bots (and seats played for) act after a human-ish pause
+BOT_MOVE_S = (0.6, 1.2)
+THROW_S = 0.7                # pauses that let everyone watch: the shells tumble and settle,
+SPECIAL_S = 0.5              # a 4 or 8 lingers,
+HOP_S = 0.18                 # a pawn hops each square,
+CAPTURE_S = 0.6              # a captured pawn flies home
 
 
 def rot(cell: Cell, k: int = 1) -> Cell:
@@ -94,7 +101,7 @@ class Pawn:
 class RouteMatch:
     def __init__(self, seats: List[Seat], rules: str = "traditional",
                  clock: Callable[[], float] = time.monotonic, rng: Optional[random.Random] = None,
-                 entry_carry: bool = False, max_chain: Optional[int] = None) -> None:
+                 entry_carry: bool = False, max_chain: Optional[int] = None, pauses: bool = True) -> None:
         if len(seats) != SEATS:
             raise ValueError("Ang Mang Chok Chang needs exactly four seats.")
         if rules not in RULES:
@@ -116,7 +123,15 @@ class RouteMatch:
         self.places: List[str] = []   # seat ids in finishing order
         self.events: List[dict] = []
         self.seq = 0
-        self.rewards: Dict[str, dict] = {}
+        self.rewards: Dict[str, dict] = {}   # seat id -> payout, filled by the server
+        self.pauses = pauses
+        self.deadline = 0.0           # when a human's decision times out
+        self.act_at = 0.0             # when an auto seat acts
+        self.anim_until = 0.0
+        self.resume = ""              # the phase an animation pause returns to
+        self.afk = False              # the human to act timed out: play the rest of this turn for them
+        self._reported: set = set()
+        self._arm()
 
     # ── lookups ──────────────────────────────────────────────────────────
     def index_of(self, sid: str) -> int:
@@ -216,6 +231,7 @@ class RouteMatch:
         if not self.legal_moves(sid):
             self._event("stuck", seat=sid)
             self._settle(sid)
+        self._pause(THROW_S + (SPECIAL_S if t.extra else 0.0))
         return t
 
     def do_move(self, sid: str, pawn) -> dict:
@@ -241,6 +257,7 @@ class RouteMatch:
                 self.places.append(sid)
                 self._event("placed", seat=sid, place=len(self.places))
         self._settle(sid)
+        self._pause(HOP_S * len(move["path"]) + (CAPTURE_S if move["captures"] else 0.0))
         return move
 
     # ── turn flow ────────────────────────────────────────────────────────
@@ -259,16 +276,84 @@ class RouteMatch:
             if self.seats[nxt].id not in self.places:
                 self.turn = nxt
                 break
-        self.owed, self.chain, self.last, self.phase = 1, 0, None, "throw"
+        self.owed, self.chain, self.last, self.phase, self.afk = 1, 0, None, "throw", False
 
     def _check_over(self) -> bool:
-        racing = [s.id for s in self.seats if s.id not in self.places]
-        if len(racing) <= 1:
-            self.places += racing
-            self.phase = "over"
-            self._event("over")
+        """Over when one seat is left racing, or no human is (nobody waits for bots)."""
+        racing = [s for s in self.seats if s.id not in self.places]
+        if len(racing) > 1 and any(not s.bot and not s.left for s in racing):
+            return False
+        self.places += [s.id for s in sorted(racing, key=lambda s: self.progress(s.id), reverse=True)]
+        self.phase = "over"
+        self._event("over")
+        return True
+
+    # ── the clock ────────────────────────────────────────────────────────
+    def _played_for(self) -> bool:
+        return self.current.auto or self.afk
+
+    def _arm(self) -> None:
+        """A decision starts: the human clock, and when an auto seat will act."""
+        now = self.clock()
+        self.deadline = now + TIMES["decide"]
+        lo, hi = BOT_THROW_S if self.phase == "throw" else BOT_MOVE_S
+        self.act_at = now + self.rng.uniform(lo, hi)
+
+    def _pause(self, secs: float) -> None:
+        if self.phase == "over":
+            return
+        if not self.pauses or secs <= 0:
+            self._arm()
+            return
+        self.resume, self.phase = self.phase, "anim"
+        self.anim_until = self.clock() + secs
+
+    def tick(self) -> bool:
+        """Move the match on: end a pause, or act for an auto seat or a timed-out human."""
+        if self.phase == "over":
+            return False
+        now = self.clock()
+        if self.phase == "anim":
+            if now < self.anim_until:
+                return False
+            self.phase, self.resume = self.resume, ""
+            self._arm()
             return True
-        return False
+        if self._played_for():
+            if now < self.act_at:
+                return False
+        elif now < self.deadline:
+            return False
+        else:
+            self.afk = True
+        sid = self.current.id
+        if self.phase == "throw":
+            self.do_throw(sid)
+        else:
+            self.do_move(sid, choose(self, sid))
+        return True
+
+    def set_connected(self, sid: str, connected: bool) -> None:
+        self.seat(sid).connected = connected
+        if self.current.id == sid and self.phase in ("throw", "move"):
+            if connected:
+                self.afk = False
+            self._arm()
+
+    def leave(self, sid: str) -> None:
+        """Walked out: the seat plays itself from now on (and may end the match)."""
+        self.seat(sid).left = True
+        if self.phase == "over":
+            return
+        if self.current.id == sid and self.phase in ("throw", "move"):
+            self._arm()
+        self._check_over()
+
+    def newly_placed(self) -> List[str]:
+        """Human seats whose final place was fixed since the last call (the server pays them)."""
+        out = [sid for sid in self.places if sid not in self._reported and not self.seat(sid).bot]
+        self._reported.update(out)
+        return out
 
     def progress(self, sid: str) -> Tuple[int, int]:
         pawns = self.pawns[sid]
@@ -278,3 +363,64 @@ class RouteMatch:
         order = self.places + sorted((s.id for s in self.seats if s.id not in self.places),
                                      key=lambda sid: self.progress(sid), reverse=True)
         return [{"id": sid, "place": i + 1, "finished": self.progress(sid)[0]} for i, sid in enumerate(order)]
+
+    # ── what a player sees ───────────────────────────────────────────────
+    def state_for(self, viewer: str) -> dict:
+        live = self.phase in ("throw", "move")
+        seats = []
+        for i, s in enumerate(self.seats):
+            states = [p.state for p in self.pawns[s.id]]
+            seats.append({"id": s.id, "name": s.name, "character": s.character, "index": i, "colour": COLOURS[i],
+                          "bot": s.bot, "connected": s.connected, "left": s.left,
+                          "home": states.count("home"), "active": states.count("active"),
+                          "finished": states.count("finished"), "captured": s.id in self.captured,
+                          "place": self.places.index(s.id) + 1 if s.id in self.places else None})
+        return {
+            "id": self.id,
+            "rules": self.rules,
+            "you": next((i for i, s in enumerate(self.seats) if s.id == viewer), None),
+            "turn": self.turn,
+            "phase": self.phase,
+            "owed": self.owed,
+            "ms_left": int(max(0.0, self.deadline - self.clock()) * 1000) if live and not self._played_for() else None,
+            "last": {"faces": list(self.last.faces), "value": self.last.value, "extra": self.last.extra} if self.last else None,
+            "seats": seats,
+            "pawns": {s.id: [{"state": p.state, "index": p.index} for p in self.pawns[s.id]] for s in self.seats},
+            "moves": self.legal_moves(viewer),
+            "events": self.events[-30:],
+            "standings": self.standings() if self.finished else None,
+        }
+
+
+# ── bots ─────────────────────────────────────────────────────────────────
+
+def _threatened(match: RouteMatch, sid: str, index: int) -> bool:
+    """Could an opponent land on this pawn with their next throw?"""
+    cell = match.cell(sid, index)
+    if cell in SAFE:
+        return False
+    for s in match.seats:
+        if s.id == sid:
+            continue
+        for p in match.pawns[s.id]:
+            if p.state != "active":
+                continue
+            for v in (1, 2, 3, 4, 8):
+                path = match._walk(s.id, p.index, v)
+                if path and match.cell(s.id, path[-1]) == cell:
+                    return True
+    return False
+
+
+def choose(match: RouteMatch, sid: str) -> int:
+    """A bot's pick: capture, else finish, else enter, else escape danger, else the furthest pawn."""
+    moves = match.legal_moves(sid)
+    if not moves:
+        raise RouteError("No pawn can move.")
+
+    def escapes(m: dict) -> bool:
+        return (not m["enters"] and _threatened(match, sid, match.pawns[sid][m["pawn"]].index)
+                and not _threatened(match, sid, m["to"]))
+
+    return max(moves, key=lambda m: (bool(m["captures"]), m["finishes"], m["enters"], escapes(m), m["to"],
+                                     match.rng.random()))["pawn"]
