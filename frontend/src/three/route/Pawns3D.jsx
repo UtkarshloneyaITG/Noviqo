@@ -1,20 +1,23 @@
 /**
- * Pawns3D — the 16 lacquered pawns. Pawns at home wait in a tray in front of
+ * Pawns3D — the 16 lacquered pawns. Home pawns wait in a tray in front of
  * their seat's side of the board; pawns on the board stand on their square
  * (several on one square share it, offset); finished pawns gather on the
- * centre. New `moved` / `entered` events hop a pawn square by square along
- * the server's path, and `captured` arcs the victim back to its tray. On
- * your move, the pawns you may move glow and can be clicked.
+ * centre. A move plays as hand work: a moment for the mover's hand to reach
+ * the pawn, then the pawn is carried square by square (tapping down on
+ * each), then set down. While that happens it is published in
+ * acts.carry[seat] so the mover's hand (yours or a seated player's) follows
+ * it. A captured pawn is knocked home after the mover lands. On your move,
+ * the pawns you may move glow and can be clicked.
  */
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CELL, HALF, FELT_TOP, cellToWorld } from './Board3D'
 import { COLOUR_HEX, pathFor, rotate } from '../../route/info'
+import { acts, CAPTURE_S, HOP_S, REACH_S, RELEASE_S } from './acts'
 
-const HOP_S = 0.18 // server: route.HOP_S
-const CAPTURE_S = 0.6 // server: route.CAPTURE_S
 const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+const CARRY_H = reduce ? 0 : 0.4 // how high a carried pawn lifts between taps
 
 // Shared shape: a bead on a flared cone, built once.
 const PROFILE = [[0, 0], [0.2, 0], [0.21, 0.04], [0.15, 0.08], [0.09, 0.3], [0.07, 0.36], [0.11, 0.4], [0.12, 0.46], [0.08, 0.55], [0, 0.58]]
@@ -24,7 +27,7 @@ const lacquer = (colour) =>
   (MATS[colour] ??= new THREE.MeshStandardMaterial({ color: COLOUR_HEX[colour], roughness: 0.28, metalness: 0.15, emissive: COLOUR_HEX[colour], emissiveIntensity: 0 }))
 
 /** Where seat `s`'s home pawn `i` waits: a tray just outside its side of the board. */
-function trayPos(seatIndex, i, turns, out) {
+export function trayPos(seatIndex, i, turns, out = new THREE.Vector3()) {
   const [r, c] = rotate(pathFor(seatIndex)[0], turns) // its home square, as you see the board
   const dir = new THREE.Vector2(c - 2, r - 2).normalize()
   const side = new THREE.Vector2(-dir.y, dir.x)
@@ -41,7 +44,7 @@ function restPositions(st, turns) {
   st.seats.forEach((s) => {
     st.pawns[s.id].forEach((p, i) => {
       const key = `${s.id}:${i}`
-      if (p.state === 'home') out[key] = trayPos(s.index, i, turns, new THREE.Vector3())
+      if (p.state === 'home') out[key] = trayPos(s.index, i, turns)
       else {
         const cell = pathFor(s.index)[p.state === 'finished' ? 24 : p.index]
         const k = cell.join(',')
@@ -73,7 +76,7 @@ function Pawn({ pawn, colour, rig, start, movable, onPick }) {
   return (
     <group ref={ref}>
       <mesh geometry={GEO} material={mat} castShadow scale={1.25}
-        onClick={movable ? (e) => (e.stopPropagation(), onPick(pawn)) : undefined}
+        onClick={movable ? (e) => (e.stopPropagation(), (document.body.style.cursor = ''), onPick(pawn)) : undefined}
         onPointerOver={movable ? () => (document.body.style.cursor = 'pointer') : undefined}
         onPointerOut={movable ? () => (document.body.style.cursor = '') : undefined} />
       {movable && (
@@ -87,28 +90,31 @@ function Pawn({ pawn, colour, rig, start, movable, onPick }) {
 }
 
 export default function Pawns3D({ st, turns, onPick }) {
-  const rigs = useRef({}) // key → { group, queue: [{to, dur, arc}], from, t }
+  const rigs = useRef({}) // key → { group, queue: [{to, dur, arc, act, seat}], from, t }
   const seen = useRef(null)
   const rest = useMemo(() => restPositions(st, turns), [st, turns])
   const movable = new Set(st.you === st.turn && st.phase === 'move' ? st.moves.map((m) => m.pawn) : [])
   const mine = st.seats[st.you]?.id
 
-  // New events become waypoints; the very first state just places everything.
+  // New events become hand work; the very first state (or a gap after a reconnect) just places everything.
   useEffect(() => {
     const fresh = seen.current == null ? [] : st.events.filter((e) => e.seq > seen.current)
+    const gap = fresh.length > 0 && fresh[0].seq > (seen.current ?? 0) + 1
     seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
-    if (reduce) return
-    let hop = 0 // how long the last mover takes to arrive: its victims fly home after that
+    if (reduce || gap) return
+    let landing = 0 // how long the last mover takes to set down: its victims fly home after that
     for (const e of fresh) {
       const rig = rigs.current[`${e.seat}:${e.pawn}`]
       const s = st.seats.find((x) => x.id === e.seat)
       if (!rig || !s) continue
       if (e.kind === 'moved' || e.kind === 'entered') {
-        for (const idx of e.path) rig.queue.push({ to: cellToWorld(pathFor(s.index)[idx], turns), dur: HOP_S, arc: 0.45 })
-        hop = e.path.length * HOP_S
+        rig.queue.push({ to: null, dur: REACH_S, arc: 0, act: 'reach', seat: e.seat })
+        for (const idx of e.path) rig.queue.push({ to: cellToWorld(pathFor(s.index)[idx], turns), dur: HOP_S, arc: CARRY_H, act: 'carry', seat: e.seat })
+        rig.queue.push({ to: null, dur: RELEASE_S, arc: 0, act: 'release', seat: e.seat })
+        landing = REACH_S + e.path.length * HOP_S
       } else if (e.kind === 'captured') {
-        if (hop) rig.queue.push({ to: null, dur: hop, arc: 0 }) // hold still until struck
-        rig.queue.push({ to: trayPos(s.index, e.pawn, turns, new THREE.Vector3()), dur: CAPTURE_S, arc: 2.2 })
+        if (landing) rig.queue.push({ to: null, dur: landing, arc: 0 }) // hold still until struck
+        rig.queue.push({ to: trayPos(s.index, e.pawn, turns), dur: CAPTURE_S, arc: 2.2 })
       }
     }
   }, [st, turns])
@@ -117,8 +123,8 @@ export default function Pawns3D({ st, turns, onPick }) {
     for (const [key, rig] of Object.entries(rigs.current)) {
       const g = rig.group
       if (!g) continue
-      const target = rest[key]
       if (!rig.queue.length) {
+        const target = rest[key]
         if (target) g.position.lerp(target, Math.min(1, dt * 10)) // settle onto the exact resting spot
         continue
       }
@@ -128,12 +134,21 @@ export default function Pawns3D({ st, turns, onPick }) {
       const k = Math.min(1, rig.t)
       g.position.lerpVectors(rig.from, step.to || rig.from, k)
       g.position.y += Math.sin(Math.PI * k) * step.arc
+      if (step.act) {
+        const c = (acts.carry[step.seat] ??= { phase: step.act, at: new THREE.Vector3() })
+        c.phase = step.act
+        c.at.copy(g.position)
+      }
       if (k >= 1) {
         rig.queue.shift()
         rig.t = 0
+        if (step.act === 'release') delete acts.carry[step.seat]
       }
     }
   })
+
+  // Leaving the table: nobody is carrying anything any more.
+  useEffect(() => () => Object.keys(acts.carry).forEach((k) => delete acts.carry[k]), [])
 
   return (
     <group>
@@ -141,9 +156,7 @@ export default function Pawns3D({ st, turns, onPick }) {
         st.pawns[s.id].map((p, i) => {
           const key = `${s.id}:${i}`
           const rig = (rigs.current[key] ??= { group: null, queue: [], from: null, t: 0 })
-          return (
-            <Pawn key={key} pawn={i} colour={s.colour} rig={rig} start={rest[key]} movable={s.id === mine && movable.has(i)} onPick={onPick} />
-          )
+          return <Pawn key={key} pawn={i} colour={s.colour} rig={rig} start={rest[key]} movable={s.id === mine && movable.has(i)} onPick={onPick} />
         }),
       )}
     </group>

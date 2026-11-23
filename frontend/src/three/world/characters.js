@@ -189,9 +189,19 @@ export function reachArm(model, side, target, w) {
   const hand = b['hand' + side]
   if (!up || !lo || !hand || !(w > 0)) return
   model.root.updateWorldMatrix(true, true)
-  const S = up.getWorldPosition(r1)
+  let S = up.getWorldPosition(r1)
   const a = S.distanceTo(lo.getWorldPosition(r2))
   const len = r2.distanceTo(hand.getWorldPosition(r3))
+  // Too far for the arm alone? Lean the body in (up to ~35°), as a seated player would.
+  const lean = b.chest // applyIdle resets it every frame, so the lean never piles up
+  const short = S.distanceTo(target) - (a + len) * 0.92
+  if (lean && short > 0) {
+    const pivot = lean.getWorldPosition(r4)
+    const axis = r2.set(0, 1, 0).cross(r3.copy(target).sub(pivot).setY(0)).normalize()
+    turnBone(lean, axis, Math.min(0.6, short / Math.max(1e-3, S.distanceTo(pivot))) * w)
+    model.root.updateWorldMatrix(true, true)
+    S = up.getWorldPosition(r1)
+  }
   const body = (b.chest || up.parent).getWorldPosition(r4)
   const out = r3.copy(S).sub(body).setY(0).normalize().multiplyScalar(0.6)
   const e = solveElbow(S.toArray(), target.toArray(), a, len, [out.x, -1, out.z])
