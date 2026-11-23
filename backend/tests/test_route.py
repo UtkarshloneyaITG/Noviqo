@@ -346,6 +346,14 @@ def test_events_carry_increasing_seq(clock):
     assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
 
 
+def test_a_throw_with_no_move_still_shows_who_threw_what(clock):
+    m = make(clock)
+    give(m, 2)                                                 # every pawn at home: no move, the turn passes
+    st = m.state_for("p1")
+    assert m.turn == 1 and st["last"]["value"] == 2 and st["last"]["seat"] == "p0"
+    assert any(e["kind"] == "stuck" and e["value"] == 2 for e in st["events"])
+
+
 def test_choose_prefers_capture_then_finish_then_enter(clock):
     def setup(capture, finish):
         m = make(clock)

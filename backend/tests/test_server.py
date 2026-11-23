@@ -617,6 +617,15 @@ def test_route_leaving_and_the_last_human_closes_the_table(client):
         assert match.id not in main.route_matches
 
 
+def test_route_finished_player_who_leaves_sees_their_coins(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), _, match = start_route(client, stack)
+        match.places.append(a_id)                               # their place is fixed (as on finishing)
+        a.send_json({"type": "route_leave"})
+        recv(a, "route_left")
+        assert any(m["type"] == "profile" for m in drain(a))    # the lobby balance updates right away
+
+
 def test_route_seat_survives_a_reconnect(client):
     with ExitStack() as stack:
         a = stack.enter_context(client.websocket_connect("/ws"))

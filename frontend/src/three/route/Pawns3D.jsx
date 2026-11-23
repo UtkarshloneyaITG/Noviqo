@@ -6,7 +6,7 @@
  * the server's path, and `captured` arcs the victim back to its tray. On
  * your move, the pawns you may move glow and can be clicked.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { CELL, HALF, FELT_TOP, cellToWorld } from './Board3D'
@@ -58,16 +58,20 @@ function restPositions(st, turns) {
 function Pawn({ pawn, colour, rig, start, movable, onPick }) {
   const mat = useMemo(() => lacquer(colour).clone(), [colour])
   useEffect(() => () => mat.dispose(), [mat])
+  const ref = useRef()
+  // Placed once, on mount; from then on the animation owns the position.
+  useLayoutEffect(() => {
+    rig.group = ref.current
+    if (start) ref.current.position.copy(start)
+    return () => {
+      if (rig.group === ref.current) rig.group = null
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useFrame(({ clock }) => {
     mat.emissiveIntensity = movable ? 0.35 + 0.3 * Math.sin(clock.elapsedTime * 6) : 0
   })
   return (
-    <group
-      ref={(g) => {
-        if (g && !rig.group && start) g.position.copy(start) // placed once; the animation owns it after
-        rig.group = g
-      }}
-    >
+    <group ref={ref}>
       <mesh geometry={GEO} material={mat} castShadow scale={1.25}
         onClick={movable ? (e) => (e.stopPropagation(), onPick(pawn)) : undefined}
         onPointerOver={movable ? () => (document.body.style.cursor = 'pointer') : undefined}

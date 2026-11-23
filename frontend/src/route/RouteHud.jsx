@@ -28,7 +28,7 @@ function Shell({ up }) {
   )
 }
 
-function LastThrow({ last, owed, mine }) {
+function LastThrow({ last, owed, mine, by }) {
   if (!last) return null
   const name = THROW_NAMES[last.value]
   return (
@@ -42,6 +42,7 @@ function LastThrow({ last, owed, mine }) {
         {last.value}
         {name && <small>{name}</small>}
       </b>
+      {by && <span className="rt-owed">{by}</span>}
       {last.extra && <span className="rt-extra">Extra throw!</span>}
       {mine && owed > 1 && <span className="rt-owed">{owed} throws to go</span>}
     </div>
@@ -104,10 +105,13 @@ function Seats({ st }) {
   )
 }
 
-/** Short notices for what just happened (captures, finishes, places). */
+/** Short notices for what just happened (captures, finishes, places, throws nobody could use). */
+let noteId = 0
 function useNotices(st) {
   const seen = useRef(null)
+  const timers = useRef([])
   const [notes, setNotes] = useState([])
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
   useEffect(() => {
     const fresh = st.events.filter((e) => seen.current != null && e.seq > seen.current)
     seen.current = st.events.length ? st.events[st.events.length - 1].seq : 0
@@ -116,12 +120,13 @@ function useNotices(st) {
       e.kind === 'captured' ? [`${name(e.by)} captured ${name(e.seat)}'s pawn!`]
         : e.kind === 'finished' ? [`${name(e.seat)} brought a pawn home`]
           : e.kind === 'placed' ? [`${name(e.seat)} finishes ${ORDINAL[e.place]}!`]
-            : [],
+            : e.kind === 'stuck' ? [`${name(e.seat)} threw ${e.value}: no pawn can move`]
+              : [],
     )
     if (!lines.length) return
-    setNotes((n) => [...n, ...lines].slice(-3))
-    const id = setTimeout(() => setNotes((n) => n.slice(lines.length)), 3200)
-    return () => clearTimeout(id)
+    const items = lines.map((text) => ({ id: ++noteId, text }))
+    setNotes((n) => [...n, ...items].slice(-3))
+    for (const it of items) timers.current.push(setTimeout(() => setNotes((n) => n.filter((x) => x.id !== it.id)), 3200))
   }, [st])
   return notes
 }
@@ -229,7 +234,7 @@ export default function RouteHud() {
       <Prompt st={st} me={me} />
       <Seats st={st} />
       <div className="rt-bottom">
-        <LastThrow last={st.last} owed={st.owed} mine={mine} />
+        <LastThrow last={st.last} owed={st.owed} mine={mine} by={st.last && st.last.seat !== me?.id ? st.seats.find((s) => s.id === st.last.seat)?.name : null} />
         {canThrow && (
           <button className="rt-btn go rt-throwbtn" onClick={routeThrow} autoFocus>
             Throw
@@ -247,9 +252,9 @@ export default function RouteHud() {
         )}
       </div>
       <div className="rt-notes" aria-live="polite">
-        {notes.map((n, i) => (
-          <div key={`${i}${n}`} className="rt-panel rt-note">
-            {n}
+        {notes.map((n) => (
+          <div key={n.id} className="rt-panel rt-note">
+            {n.text}
           </div>
         ))}
       </div>

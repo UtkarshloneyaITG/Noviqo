@@ -7,7 +7,7 @@
  *
  *   cellToWorld([r, c], turns) → where a pawn stands on that square
  */
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { TABLE_TOP_Y } from '../layout'
 import { COLOUR_HEX, SAFE, rotate } from '../../route/info'
@@ -104,10 +104,14 @@ function boardTexture(turns, colours) {
   return t
 }
 
-export default function Board3D({ turns, seats }) {
-  const colours = useMemo(() => [0, 1, 2, 3].map((i) => COLOUR_HEX[seats[i]?.colour] || '#888'), [seats])
-  const top = useMemo(() => boardTexture(turns, colours), [turns, colours])
+const SEAT_COLOURS = ['red', 'blue', 'green', 'yellow'].map((c) => COLOUR_HEX[c]) // server: route.COLOURS
+
+export default function Board3D({ turns }) {
+  // Painted once per view (not per state push), and freed when replaced or unmounted.
+  const top = useMemo(() => boardTexture(turns, SEAT_COLOURS), [turns])
+  useEffect(() => () => top.dispose(), [top])
   const wood = useMemo(() => new THREE.MeshStandardMaterial({ color: '#7a4a22', roughness: 0.6 }), [])
+  useEffect(() => () => wood.dispose(), [wood])
   const slabY = BOARD_TOP - 0.11
   const W = HALF * 2
   return (

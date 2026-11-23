@@ -1218,6 +1218,7 @@ async def _route_leave(ws: WebSocket, _msg: dict) -> None:
     aid = manager.get_player_id(ws)
     await _leave_route(aid)
     await _send(ws, "route_left")
+    await _push_profile(aid)                  # a finished player's coins show in the lobby at once
     await _push_party(parties.of(aid))
     await _presence_changed(aid)
 

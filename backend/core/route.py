@@ -119,6 +119,7 @@ class RouteMatch:
         self.owed = 1                 # throws still owed this turn
         self.chain = 0                # extra throws earned this turn (for max_chain)
         self.last: Optional[Throw] = None
+        self.last_by: Optional[str] = None  # who threw it (kept after the turn passes, so everyone sees it)
         self.captured: set = set()    # seats that have captured at least once
         self.places: List[str] = []   # seat ids in finishing order
         self.events: List[dict] = []
@@ -222,14 +223,14 @@ class RouteMatch:
         if faces is None:
             faces = tuple(1 if self.rng.random() < 0.5 else 0 for _ in range(4))
         t = score(faces)
-        self.last = t
+        self.last, self.last_by = t, sid
         self.owed -= 1
         if t.extra:
             self._earn()
         self._event("throw", seat=sid, faces=list(t.faces), value=t.value, extra=t.extra)
         self.phase = "move"
         if not self.legal_moves(sid):
-            self._event("stuck", seat=sid)
+            self._event("stuck", seat=sid, value=t.value)
             self._settle(sid)
         self._pause(THROW_S + (SPECIAL_S if t.extra else 0.0))
         return t
@@ -276,7 +277,7 @@ class RouteMatch:
             if self.seats[nxt].id not in self.places:
                 self.turn = nxt
                 break
-        self.owed, self.chain, self.last, self.phase, self.afk = 1, 0, None, "throw", False
+        self.owed, self.chain, self.phase, self.afk = 1, 0, "throw", False
 
     def _check_over(self) -> bool:
         """Over when one seat is left racing, or no human is (nobody waits for bots)."""
@@ -383,7 +384,7 @@ class RouteMatch:
             "phase": self.phase,
             "owed": self.owed,
             "ms_left": int(max(0.0, self.deadline - self.clock()) * 1000) if live and not self._played_for() else None,
-            "last": {"faces": list(self.last.faces), "value": self.last.value, "extra": self.last.extra} if self.last else None,
+            "last": {"faces": list(self.last.faces), "value": self.last.value, "extra": self.last.extra, "seat": self.last_by} if self.last else None,
             "seats": seats,
             "pawns": {s.id: [{"state": p.state, "index": p.index} for p in self.pawns[s.id]] for s in self.seats},
             "moves": self.legal_moves(viewer),

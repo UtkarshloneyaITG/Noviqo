@@ -45,7 +45,7 @@ export default function RouteWorld() {
       <LookControls position={[0, 4.6, 10]} lookAt={[0, 1.1, 1]} />
       <Room3D />
       <Table3D />
-      <Board3D turns={turns} seats={st.seats} />
+      <Board3D turns={turns} />
       <Pawns3D st={st} turns={turns} onPick={routeMove} />
       <Shells3D st={st} />
       {others.map((s) => {
