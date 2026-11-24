@@ -15,6 +15,7 @@ import { useCharacterModel, DEFAULT_CHARACTER } from '../world/characters'
 import { animateFigure, LOBBY_EMOTES } from '../world/lobbyMotion'
 import { glowTexture, beamMaterial, PALETTE } from '../world/sky'
 import LobbyBackdrop from '../world/LobbyBackdrop'
+import ClipFigure from './ClipFigure'
 import Entrance, { EntranceLight, SHAKE, useEntranceFigure } from '../world/Entrance'
 import { prewarmEntranceTextures } from '../world/entranceFx'
 import { Crest, rankColor } from '../../lobby/ui'
@@ -232,6 +233,10 @@ function Party() {
   )
   const send = useAppStore((s) => s.send)
   const entryPreview = useAppStore((s) => s.entryPreview)
+  // PROTOTYPE (?anim=1): a clip-animated figure on the first free spot, next to yours.
+  const proto = useMemo(() => typeof location !== 'undefined' && new URLSearchParams(location.search).has('anim'), [])
+  const myEmote = useAppStore((s) => s.emotes[s.profile?.id])
+  const myWaveAt = myEmote?.id === 'wave' ? myEmote.at : 0
 
   const members = party?.members?.length ? party.members : [me]
   const iLead = (party?.leader_id ?? me.id) === me.id
@@ -244,6 +249,19 @@ function Party() {
   const spots = SPOTS.slice(0, party?.max ?? 5).map(([x, z], i) => {
     const m = members[i]
     const lead = i === 0
+    if (!m && proto && i === members.length) {
+      return (
+        <group key="clip-proto">
+          <Pedestal x={x} z={z} color={PALETTE.green} />
+          <group position={[x, H, z]} rotation-y={-x * 0.08}>
+            <Suspense fallback={null}>
+              <ClipFigure waveAt={myWaveAt} />
+            </Suspense>
+          </group>
+          <NamePlate x={x} z={z} name="Clip animation" color={PALETTE.green} status="Prototype · tap to wave" statusClass="ok" />
+        </group>
+      )
+    }
     if (!m) {
       return (
         <group key={`spot-${i}`}>
