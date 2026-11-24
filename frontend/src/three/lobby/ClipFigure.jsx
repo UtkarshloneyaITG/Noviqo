@@ -4,8 +4,9 @@
  * to compare the two side by side. Shown only with ?anim=1 in the address.
  *
  *   Idle  — Quaternius Universal Animation Library "Idle_Loop" (real human idle)
- *   Wave  — the same idle for the body, with the right arm following
- *           Quaternius RobotExpressive's "Wave" (the free library has no wave)
+ *   Wave  — that idle for the body, plus an authored wave on the right arm:
+ *           arm up, forearm vertical, palm turned forward, two swings at the
+ *           elbow, back into the idle (the free library has no wave)
  *
  * Both are retargeted onto our rig once at load (three/world/retarget.js).
  * Plays Idle; crossfades into Wave when clicked or whenever `waveAt` changes
@@ -21,11 +22,23 @@ import { bakeClip, buildSource, LIBRARY_MAP } from '../world/retarget'
 
 const MOTIONS = '/models/proto/motions.json'
 const HEIGHT = 1.8 // same standing height as the lobby characters
-const WAVE_ARM = [
-  ['ShoulderR', 'UpperArmR', 'ShoulderR', 'UpperArmR'],
-  ['UpperArmR', 'LowerArmR', 'UpperArmR', 'LowerArmR'],
-  ['LowerArmR', 'HandR', 'LowerArmR', 'Palm2R'],
-]
+// Wave keyframes in model space (+Y up, +Z forward; the right arm is on −X).
+const WAVE_SECS = 2.0
+const smooth = (x) => x * x * (3 - 2 * x)
+const seg = (t, a, b) => Math.min(1, Math.max(0, (t - a) / (b - a)))
+function waveKeys(t) {
+  const weight = Math.min(smooth(seg(t, 0, 0.3)), 1 - smooth(seg(t, 1.6, WAVE_SECS)))
+  const swing = t > 0.3 ? Math.sin((t - 0.3) * Math.PI * 2 * 1.5) : 0 // ~two waves
+  return {
+    weight,
+    palmForward: 'HandR',
+    openHand: 'R',
+    dirs: {
+      UpperArmR: [-0.6, 0.65, 0.3], // out to the side and up
+      LowerArmR: [-0.12 - 0.38 * swing, 0.92, 0.18], // upright, swinging at the elbow
+    },
+  }
+}
 
 export default function ClipFigure({ character, waveAt = 0 }) {
   const { scene } = useGLTF(characterUrl(character))
@@ -34,16 +47,10 @@ export default function ClipFigure({ character, waveAt = 0 }) {
   const { root, mixer, actions } = useMemo(() => {
     const motions = JSON.parse(text)
     const lib = buildSource(motions.sources.library)
-    const robot = buildSource(motions.sources.robot)
     const idleBody = { src: lib, clip: 'Idle_Loop', ref: 'A_TPose', map: LIBRARY_MAP }
     const bind = clone(scene) // bind (T) pose, used only for baking
     const idle = bakeClip(bind, { name: 'Idle', duration: lib.clips.Idle_Loop.duration, body: idleBody })
-    const wave = bakeClip(bind, {
-      name: 'Wave',
-      duration: robot.clips.Wave.duration,
-      body: idleBody,
-      aim: { src: robot, clip: 'Wave', pairs: WAVE_ARM },
-    })
+    const wave = bakeClip(bind, { name: 'Wave', duration: WAVE_SECS, body: idleBody, authored: waveKeys })
 
     const root = clone(scene)
     root.traverse((o) => {

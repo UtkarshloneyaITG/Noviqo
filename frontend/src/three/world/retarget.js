@@ -81,10 +81,11 @@ const wp = (o) => o.getWorldPosition(new THREE.Vector3())
  *   body: { src, clip, ref, map }          rotation transfer (ref = the source's T-pose clip)
  *   aim:  { src, clip, pairs: [[ourBone, ourChild, srcBone, srcChild]] }   optional
  */
-export function bakeClip(target, { name, duration, fps = 30, body, aim }) {
+export function bakeClip(target, { name, duration, fps = 30, body, aim, authored }) {
   target.updateMatrixWorld(true)
   const bones = []
   target.traverse((o) => o.isBone && bones.push(o)) // parents before children
+  const childOf = new Map(bones.map((b) => [b, b.children.find((c) => c.isBone) || b.children[0]]))
   const rest = new Map(bones.map((b) => [b, { local: b.quaternion.clone(), world: wq(b) }]))
   const byName = Object.fromEntries(bones.map((b) => [b.name, b]))
 
@@ -104,6 +105,8 @@ export function bakeClip(target, { name, duration, fps = 30, body, aim }) {
   const tracks = new Map() // bone -> Float32Array of quaternions
   const hipPos = new Float32Array(frames * 3)
   const W = new Map()
+  const Wbody = new Map() // the same frame with body transfer only (no aim overrides)
+  const moved = new Set() // aim bones and everything below them
   const tmpQ = new THREE.Quaternion()
   const inv = new THREE.Quaternion()
   const dir = new THREE.Vector3()
@@ -114,24 +117,54 @@ export function bakeClip(target, { name, duration, fps = 30, body, aim }) {
     times[f] = t
     sample(body.src, body.clip, t)
     if (aim) sample(aim.src, aim.clip, (t / duration) * aim.src.clips[aim.clip].duration)
+    const keys = authored?.(t) // { dirs: { bone: [x, y, z] }, weight, palmForward? }
     W.clear()
+    Wbody.clear()
+    moved.clear()
     for (const b of bones) {
       const parentW = W.get(b.parent) ?? wq(b.parent)
+      const parentBody = Wbody.get(b.parent) ?? parentW
       const r = rest.get(b)
       const s = body.map[b.name] && body.src.byName[body.map[b.name]]
-      let w
-      if (s) {
-        // world delta from the source's T-pose, applied to our T-pose
-        w = wq(s).multiply(inv.copy(srcRef[body.map[b.name]]).invert()).multiply(r.world)
-      } else {
-        w = parentW.clone().multiply(r.local)
-      }
+      // body transfer: world delta from the source's T-pose, applied to our T-pose
+      const wBody = s ? wq(s).multiply(inv.copy(srcRef[body.map[b.name]]).invert()).multiply(r.world) : parentBody.clone().multiply(r.local)
+      Wbody.set(b, wBody)
+      let w = wBody
       const pair = aimPairs.get(b)
+      const authored = keys && keys.dirs[b.name]
       if (pair) {
         const w0 = parentW.clone().multiply(r.local)
         dir.copy(byName[pair[1]].position).applyQuaternion(w0).normalize()
         want.copy(wp(aim.src.byName[pair[3]])).sub(wp(aim.src.byName[pair[2]])).normalize()
         w = tmpQ.setFromUnitVectors(dir, want).clone().multiply(w0)
+        moved.add(b)
+      } else if (authored && keys.weight > 0) {
+        // authored keyframe: point this bone (bone → first child) along a model-space direction,
+        // blended over the body pose by the key's weight
+        const w0 = parentW.clone().multiply(r.local)
+        dir.copy(childOf.get(b).position).applyQuaternion(w0).normalize()
+        want.fromArray(authored).normalize()
+        w = wBody.clone().slerp(tmpQ.setFromUnitVectors(dir, want).clone().multiply(w0), keys.weight)
+        moved.add(b)
+      } else if (moved.has(b.parent)) {
+        // below a re-aimed bone (hand, fingers): keep the body pose RELATIVE to the parent,
+        // so the hand follows the raised forearm instead of keeping the idle's world angle
+        const local = inv.copy(parentBody).invert().multiply(wBody)
+        if (keys?.openHand && keys.weight > 0 && new RegExp(`^(Index|Middle|Ring|Pinky|Thumb)\\d${keys.openHand}$`).test(b.name)) {
+          local.slerp(r.local, keys.weight) // fingers straighten (their T-pose) for an open, waving hand
+        }
+        w = parentW.clone().multiply(local)
+        moved.add(b)
+        if (keys?.palmForward === b.name && keys.weight > 0) {
+          // turn the hand about the forearm so the palm faces forward (+Z), the way people wave
+          const axis = dir.copy(childOf.get(b).position).applyQuaternion(w).normalize()
+          const palm = want.set(0, -1, 0).applyQuaternion(inv.copy(r.world).invert()).applyQuaternion(w) // palms face down in the T-pose
+          const flat = (v) => v.clone().sub(axis.clone().multiplyScalar(v.dot(axis))).normalize()
+          const from = flat(palm)
+          const to = flat(new THREE.Vector3(0, 0, 1))
+          const angle = Math.atan2(from.clone().cross(to).dot(axis), from.dot(to))
+          w = tmpQ.setFromAxisAngle(axis, angle * keys.weight).clone().multiply(w)
+        }
       }
       W.set(b, w)
       if (s || pair) {
