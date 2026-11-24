@@ -255,7 +255,7 @@ function Party() {
           <Pedestal x={x} z={z} color={PALETTE.green} />
           <group position={[x, H, z]} rotation-y={-x * 0.08}>
             <Suspense fallback={null}>
-              <ClipFigure waveAt={myWaveAt} />
+              <ClipFigure character={me.character} waveAt={myWaveAt} />
             </Suspense>
           </group>
           <NamePlate x={x} z={z} name="Clip animation" color={PALETTE.green} status="Prototype · tap to wave" statusClass="ok" />
