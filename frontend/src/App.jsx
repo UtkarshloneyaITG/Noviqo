@@ -25,6 +25,7 @@ import Summary from './components/Summary'
 import PythonDocs from './components/PythonDocs'
 import RolesHud from './roles/RolesHud'
 import RouteHud from './route/RouteHud'
+import StageHud from './stage/StageHud'
 import { useDisplay } from './store/display'
 
 // Hold the Game Over modal back briefly so the in-scene 3D win moment
@@ -42,6 +43,7 @@ export default function App() {
   const status = useAppStore((s) => s.gameState?.status)
   const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
   const inRoute = useAppStore((s) => !!s.routeState) // at an Ang Mang Chok Chang table
+  const inStage = useAppStore((s) => !!s.stageState) // in the Ring Clash ring
   const isConnected = useAppStore((s) => s.isConnected)
   const showColorPicker = useAppStore((s) => s.showColorPicker)
   const error = useAppStore((s) => s.error)
@@ -99,7 +101,9 @@ export default function App() {
       </div>
 
       {/* ── Screen-space HUD / overlays ────────────────────────────── */}
-      {inRoute ? (
+      {inStage ? (
+        <StageHud />
+      ) : inRoute ? (
         <RouteHud />
       ) : inRoles ? (
         <RolesHud />

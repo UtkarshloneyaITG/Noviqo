@@ -1,18 +1,18 @@
 /**
  * Retarget animation clips from another skeleton onto our characters' rig
- * (PROTOTYPE, used by three/lobby/ClipFigure.jsx). Bakes a new clip once, at
- * load, by sampling the source frame by frame:
+ * (used by three/world/clipMotion.js). Bakes a new clip once per character,
+ * by sampling the source frame by frame:
  *
  *   body bones  copy the source bone's world rotation *relative to its rest
  *               pose*. Works when both skeletons rest in the same pose — our
  *               rig and the Quaternius animation library are both T-pose,
  *               facing +Z.
  *   aim bones   point the bone the same way the source bone points (bone →
- *               child direction). Works across different rest poses (the
- *               robot's wave rests arms-down); loses forearm twist.
+ *               child direction). Works across different rest poses; loses
+ *               forearm twist.
  *   hips        also follow the source's hip bob, scaled to our hip height.
  *
- * Source skeletons and clips come from public/models/proto/motions.json
+ * Source skeletons and clips come from public/models/motion/motions.json
  * (made from the CC0 Quaternius files; see the LICENSE.txt there).
  */
 import * as THREE from 'three'
@@ -61,27 +61,42 @@ export function buildSource(source) {
   return { holder, byName, clips, mixer, action: null }
 }
 
-/** Pose a source at time t of one of its clips (loops). */
-function sample(src, clipName, t) {
-  const clip = src.clips[clipName]
-  if (src.action?.getClip() !== clip) {
-    src.mixer.stopAllAction()
-    src.action = src.mixer.clipAction(clip).play()
+/**
+ * Pose a source at time t of `clip`: a clip name (loops), or a sequence
+ * [[clipName, seconds], …] played in order — a "_Loop" clip repeats for its
+ * seconds, any other plays once (or its first seconds) and holds its last frame.
+ */
+function sample(src, clip, t) {
+  let name = clip
+  if (typeof clip !== 'string') {
+    let i = 0
+    while (i < clip.length - 1 && t > clip[i][1]) t -= clip[i++][1]
+    name = clip[i][0]
+    const d = src.clips[name].duration
+    t = name.endsWith('_Loop') ? t % d : Math.min(t, clip[i][1], d - 1e-4)
   }
-  src.mixer.setTime(t % clip.duration)
+  const c = src.clips[name]
+  if (src.action?.getClip() !== c) {
+    src.mixer.stopAllAction()
+    src.action = src.mixer.clipAction(c).play()
+  }
+  src.mixer.setTime(t % c.duration)
   src.holder.updateMatrixWorld(true)
 }
 
+const JOIN = 0.15 // seconds to blend across a join in a clip sequence
 const wq = (o) => o.getWorldQuaternion(new THREE.Quaternion())
 const wp = (o) => o.getWorldPosition(new THREE.Vector3())
 
 /**
  * Bake a clip for `target` (a fresh clone of one of our character scenes, still
  * in its bind pose, root at the origin).
- *   body: { src, clip, ref, map }          rotation transfer (ref = the source's T-pose clip)
+ *   body: { src, clip, ref, map }          rotation transfer (ref = the source's T-pose clip;
+ *                                          clip = a name or a sequence, see sample())
  *   aim:  { src, clip, pairs: [[ourBone, ourChild, srcBone, srcChild]] }   optional
+ *   lift: (t) => metres                    optional: raise the hips (a jump the source does in place)
  */
-export function bakeClip(target, { name, duration, fps = 30, body, aim, authored }) {
+export function bakeClip(target, { name, duration, fps = 30, body, aim, authored, lift }) {
   target.updateMatrixWorld(true)
   const bones = []
   target.traverse((o) => o.isBone && bones.push(o)) // parents before children
@@ -173,8 +188,27 @@ export function bakeClip(target, { name, duration, fps = 30, body, aim, authored
       }
     }
     // hips: follow the source's bob, scaled to our hip height
-    const d = wp(srcHips).sub(srcHipsRef).multiplyScalar(hipScale)
+    const d = wp(srcHips).sub(srcHipsRef)
+    if (lift) d.y += lift(t)
+    d.multiplyScalar(hipScale)
     hips.parent.worldToLocal(d.add(hipsRestWorld)).toArray(hipPos, f * 3)
+  }
+
+  // a sequence's steps needn't meet in the same pose (a step cut short): over JOIN seconds
+  // after each join, ease from the pose just before it into the next step instead of snapping
+  if (typeof body.clip !== 'string') {
+    let at = 0
+    for (const [, secs] of body.clip.slice(0, -1)) {
+      at += secs
+      const k0 = Math.floor((at / duration) * (frames - 1))
+      const n = Math.round(JOIN * fps)
+      for (let k = k0 + 1; k <= Math.min(k0 + n, frames - 1); k++) {
+        const w = (k - k0) / (n + 1)
+        const s = w * w * (3 - 2 * w)
+        for (const v of tracks.values()) THREE.Quaternion.slerpFlat(v, k * 4, v, k0 * 4, v, k * 4, s)
+        for (let c = 0; c < 3; c++) hipPos[k * 3 + c] += (hipPos[k0 * 3 + c] - hipPos[k * 3 + c]) * (1 - s)
+      }
+    }
   }
 
   const out = [...tracks].map(([b, v]) => new THREE.QuaternionKeyframeTrack(`${b.name}.quaternion`, times, v))

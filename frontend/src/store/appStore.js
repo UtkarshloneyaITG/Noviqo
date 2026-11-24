@@ -59,6 +59,7 @@ const ACCOUNT_STATE = {
   userResults: null, // last 'user_results' reply (Add friend page): { q, users }
   rolesState: null,  // your view of a Raja Mantri Chor Sipahi table (+ deadline: Date.now() ms), or null
   routeState: null,  // your view of an Ang Mang Chok Chang table (+ deadline: Date.now() ms), or null
+  stageState: null,  // your view of a Ring Clash match (+ at: performance.now() it arrived), or null
   panel: null,      // open lobby panel: inventory|shop|milestones|ranks|settings|friends|addfriend|invite|games
   playerId: null,
   roomId: null,
@@ -70,6 +71,15 @@ const ACCOUNT_STATE = {
  *  Plain object, not store state: it changes ~10×/s per player and only the
  *  seated characters read it, every frame, so it must never re-render React. */
 export const looks = {}
+
+/** Ring Clash snapshots as they arrive, oldest first: [{ at: performance.now(), fighters }].
+ *  Plain array, not store state: the fighters are drawn ~120 ms behind, blended between two
+ *  of these every frame (stage/info.js sampleFighters), which must never re-render React. */
+export const stageFrames = []
+/** Where you look in the ring (first person): changed by the mouse or a swipe many times a second and
+ *  read every frame by the camera, so a plain object, never store state. yaw = atan2(dx, dz). */
+export const stageAim = { yaw: 0, pitch: 0 }
+let leftMatch = null // the Ring Clash match you just left: its snapshots still in flight are ignored
 
 export const useAppStore = create((set, get) => ({
   // ── Connection ────────────────────────────────────────────────────────────
@@ -218,6 +228,26 @@ export const useAppStore = create((set, get) => ({
         const st = message.state
         if (!get().routeState) set({ lastRewards: null }) // a new table: no coins from the last one
         set({ routeState: { ...st, deadline: st.ms_left == null ? null : Date.now() + st.ms_left } })
+        break
+      }
+
+      case 'stage_state': {
+        const st = message.state
+        if (st.id === leftMatch) break
+        const at = performance.now()
+        if (!get().stageState) {
+          stageFrames.length = 0
+          set({ lastRewards: null }) // a new match: no coins from the last one
+        }
+        stageFrames.push({ at, fighters: st.fighters })
+        if (stageFrames.length > 20) stageFrames.splice(0, stageFrames.length - 20)
+        set({ stageState: { ...st, at } })
+        break
+      }
+
+      case 'stage_left': {
+        stageFrames.length = 0
+        set({ stageState: null })
         break
       }
 
@@ -433,6 +463,17 @@ export const useAppStore = create((set, get) => ({
   routeLeave: () => {
     get().send('route_leave')
     set({ routeState: null, bubbles: {} })
+  },
+
+  // Ring Clash: what you hold (a direction relative to where you look, or null; the guard; the way you
+  // look), a button press, back to the lobby.
+  stageInput: (move, guard, yaw) => get().send('stage_input', { move, guard, yaw }),
+  stageAct: (act) => get().send('stage_act', { act }),
+  stageLeave: () => {
+    leftMatch = get().stageState?.id ?? leftMatch
+    get().send('stage_leave')
+    stageFrames.length = 0
+    set({ stageState: null })
   },
 
   inviteFriend: (id) => {

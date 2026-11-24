@@ -12,7 +12,7 @@ from typing import Callable, Dict, List, Set
 
 MAX_MEMBERS = 5
 # People a party needs to start each game: (fewest, most). Roles fills empty seats with bots.
-GAMES = {"uno": (2, MAX_MEMBERS), "roles": (1, 4), "route": (1, 4)}
+GAMES = {"uno": (2, MAX_MEMBERS), "roles": (1, 4), "route": (1, 4), "stage": (1, MAX_MEMBERS)}
 INVITE_TTL_S = 30        # an unanswered invite lapses after this
 INVITE_SLACK_S = 2       # accepting just as the invitee's countdown ends still works (network delay)
 

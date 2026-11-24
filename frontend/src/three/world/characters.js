@@ -133,12 +133,16 @@ export function useCharacterModel(itemId, pose = 'stand', height = 1.8) {
         o.castShadow = true
         o.receiveShadow = false // receiving its own shadow blotches the low-poly faces
         o.frustumCulled = false
+        // the packs ship roughness 0.27: each flat face then flashes white as the idle
+        // turns it through a light's highlight (worst on dark suits). Shared materials; idempotent.
+        for (const m of [o.material].flat()) m.roughness = Math.max(m.roughness, 0.6)
       }
     })
     const box = new THREE.Box3().setFromObject(root)
     root.scale.setScalar(height / (box.max.y - box.min.y))
     root.updateMatrixWorld(true)
-    const bones = pose === 'sit' ? poseSeated(root) : poseStanding(root)
+    // 'bind' leaves the T-pose for clip animation (three/world/clipMotion.js) to drive
+    const bones = pose === 'sit' ? poseSeated(root) : pose === 'bind' ? boneMap(root) : poseStanding(root)
     const base = ['chest', 'neck', 'head', 'upperarml', 'upperarmr']
       .filter((k) => bones[k])
       .map((k) => [bones[k], bones[k].quaternion.clone()])

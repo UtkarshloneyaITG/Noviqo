@@ -1,0 +1,4 @@
+motions.json — the skeleton and the clips the lobby and the ring use (idle, emotes, fighting moves) from the Quaternius Universal Animation Library [Standard],
+CC0 1.0 Universal (public domain, https://creativecommons.org/publicdomain/zero/1.0/),
+https://quaternius.com/packs/universalanimationlibrary.html — retargeted onto the characters by three/world/retarget.js.
+Regenerate with frontend/scripts/extract-motions.mjs.

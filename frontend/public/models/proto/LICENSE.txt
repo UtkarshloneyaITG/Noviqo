@@ -1,3 +1,0 @@
-motions.json — the skeleton and two clips (Idle_Loop, A_TPose) of the Quaternius Universal Animation Library [Standard],
-CC0 1.0 Universal (public domain, https://creativecommons.org/publicdomain/zero/1.0/),
-https://quaternius.com/packs/universalanimationlibrary.html — used by the lobby animation prototype (three/lobby/ClipFigure.jsx).

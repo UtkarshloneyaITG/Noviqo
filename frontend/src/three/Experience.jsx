@@ -16,6 +16,7 @@ import TableWorld from './TableWorld'
 import LobbyWorld from './lobby/LobbyWorld'
 import RolesWorld from './roles/RolesWorld'
 import RouteWorld from './route/RouteWorld'
+import StageWorld from './stage/StageWorld'
 import { useDisplay, QUALITY } from '../store/display'
 import { capTick } from '../store/frameCap'
 
@@ -71,6 +72,7 @@ function Experience() {
   const inGame = useAppStore((s) => s.gameState?.status === 'playing' || s.gameState?.status === 'finished')
   const inRoles = useAppStore((s) => !!s.rolesState) // at a Raja Mantri Chor Sipahi table
   const inRoute = useAppStore((s) => !!s.routeState) // at an Ang Mang Chok Chang table
+  const inStage = useAppStore((s) => !!s.stageState) // in the Ring Clash ring
   const [dpr, setDpr] = useState(1.5)
   const [fx, setFx] = useState(true)
   const declines = useRef(0)
@@ -83,7 +85,7 @@ function Experience() {
   // A world switch compiles shaders and loads models: the frame rate dips for a moment.
   // That's not a slow device, so dips right after a switch don't lower the quality
   // (each step down resizes the canvas or drops bloom — a visible flash, mid game start).
-  const world = inRoute ? 'route' : inRoles ? 'roles' : inGame ? 'table' : 'lobby'
+  const world = inStage ? 'stage' : inRoute ? 'route' : inRoles ? 'roles' : inGame ? 'table' : 'lobby'
   const switchedAt = useRef(0)
   useEffect(() => {
     switchedAt.current = performance.now()
@@ -113,7 +115,9 @@ function Experience() {
       <ShadowSwitch on={shadows} />
       {showFps && <FpsProbe />}
 
-      <Suspense fallback={null}>{inRoute ? <RouteWorld /> : inRoles ? <RolesWorld /> : inGame ? <TableWorld /> : <LobbyWorld />}</Suspense>
+      <Suspense fallback={null}>
+        {inStage ? <StageWorld /> : inRoute ? <RouteWorld /> : inRoles ? <RolesWorld /> : inGame ? <TableWorld /> : <LobbyWorld />}
+      </Suspense>
 
       {/* The composer renders the scene un-tonemapped, so bloom only picks up
           what is truly bright (HDR rims, beams) and never the characters;

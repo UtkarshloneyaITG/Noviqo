@@ -12,12 +12,12 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useAppStore } from '../../store/appStore'
 import { useCharacterModel, DEFAULT_CHARACTER } from '../world/characters'
-import { animateFigure, LOBBY_EMOTES } from '../world/lobbyMotion'
 import { glowTexture, beamMaterial, PALETTE } from '../world/sky'
 import LobbyBackdrop from '../world/LobbyBackdrop'
-import ClipFigure from './ClipFigure'
+import { LOBBY_EMOTES, useCharacterClips, useClipAnimator } from '../world/clipMotion'
 import Entrance, { EntranceLight, SHAKE, useEntranceFigure } from '../world/Entrance'
 import { prewarmEntranceTextures } from '../world/entranceFx'
+import GestureFx from '../world/gestureFx'
 import { Crest, rankColor } from '../../lobby/ui'
 
 // Leader front and centre, two flanks, two far spots (max party of 5).
@@ -92,20 +92,23 @@ export function Pedestal({ x, z, color }) {
   )
 }
 
+/** A lobby character: animation clips (idle, emotes), entrance poses layered on top. */
 export function Figure({ character, memberId, x, z, phase, y = H, yaw = -x * 0.08 }) {
-  const model = useCharacterModel(character, 'stand')
+  const model = useCharacterModel(character, 'bind')
+  const clips = useCharacterClips(character)
+  const anim = useClipAnimator(model, clips, phase)
   const emote = useAppStore((s) => s.emotes[memberId])
-  const entrance = useEntranceFigure(model) // inside an <Entrance>: its body pose + materialise effect
+  const entrance = useEntranceFigure(model)
   const lift = useRef()
-  useFrame(({ clock }) => {
+  useFrame((_, dt) => {
     const now = performance.now()
-    const dy = animateFigure(model, reduce ? 0 : clock.elapsedTime, phase, emote, now, entrance.pose(now))
+    lift.current.position.y = anim.update(reduce ? 0 : dt, emote, now, entrance.pose(now))
     entrance.reveal(now)
-    lift.current.position.y = reduce ? 0 : dy
   })
   return (
     <group ref={lift}>
       <primitive object={model.root} position={[x, y, z]} rotation-y={yaw} />
+      <GestureFx model={model} emote={emote} />
     </group>
   )
 }
@@ -233,10 +236,6 @@ function Party() {
   )
   const send = useAppStore((s) => s.send)
   const entryPreview = useAppStore((s) => s.entryPreview)
-  // PROTOTYPE (?anim=1): a clip-animated figure on the first free spot, next to yours.
-  const proto = useMemo(() => typeof location !== 'undefined' && new URLSearchParams(location.search).has('anim'), [])
-  const myEmote = useAppStore((s) => s.emotes[s.profile?.id])
-  const myWaveAt = myEmote?.id === 'wave' ? myEmote.at : 0
 
   const members = party?.members?.length ? party.members : [me]
   const iLead = (party?.leader_id ?? me.id) === me.id
@@ -249,19 +248,6 @@ function Party() {
   const spots = SPOTS.slice(0, party?.max ?? 5).map(([x, z], i) => {
     const m = members[i]
     const lead = i === 0
-    if (!m && proto && i === members.length) {
-      return (
-        <group key="clip-proto">
-          <Pedestal x={x} z={z} color={PALETTE.green} />
-          <group position={[x, H, z]} rotation-y={-x * 0.08}>
-            <Suspense fallback={null}>
-              <ClipFigure character={me.character} waveAt={myWaveAt} />
-            </Suspense>
-          </group>
-          <NamePlate x={x} z={z} name="Clip animation" color={PALETTE.green} status="Prototype · tap to wave" statusClass="ok" />
-        </group>
-      )
-    }
     if (!m) {
       return (
         <group key={`spot-${i}`}>

@@ -425,8 +425,8 @@ const progressOf = (run, now) => (run.frozen != null ? run.frozen : reduce ? 1 :
 
 /**
  * For the Figure inside an <Entrance>: its own copies of the model's materials
- * with the reveal shader, and per frame the entrance's body pose (pass it to
- * animateFigure) — `pose(now)` is null when no entrance is playing.
+ * with the reveal shader, and per frame the entrance's body pose (layered on the
+ * clip by the figure's animator) — `pose(now)` is null when no entrance is playing.
  */
 export function useEntranceFigure(model) {
   const ctx = useContext(Ctx)

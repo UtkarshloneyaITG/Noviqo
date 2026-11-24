@@ -44,6 +44,7 @@ from core.member import Player
 from core.parties import INVITE_TTL_S, PartyError, Parties
 from core.roles import RolesError, RolesMatch, Seat as RoleSeat
 from core.route import RouteError, RouteMatch, Seat as RouteSeat
+from core.stage import Fighter, StageError, StageMatch
 from storage import Storage
 from websocket.connection_manager import ConnectionManager
 
@@ -205,6 +206,7 @@ async def _expire_after_grace(aid: str) -> None:
     await _depart(aid)
     await _leave_roles(aid)
     await _leave_route(aid)
+    await _leave_stage(aid)
     await _leave_party_for_good(aid)
     if aid in accounts.accounts:
         accounts.mark_seen(aid)
@@ -257,7 +259,7 @@ async def _dispatch(ws: WebSocket, msg: dict) -> None:
 async def _guarded(ws: WebSocket, handler, msg: dict) -> None:
     try:
         await handler(ws, msg)
-    except (AccountError, PartyError, RolesError, RouteError) as exc:
+    except (AccountError, PartyError, RolesError, RouteError, StageError) as exc:
         await _send(ws, "error", message=str(exc))
     except Exception as exc:
         log.exception("Handler error for type=%s: %s", msg.get("type"), exc)
@@ -292,6 +294,10 @@ async def _on_disconnect(ws: WebSocket) -> None:
     if route:
         route.set_connected(aid, False)
         await _push_route(route)
+    stage = _stage_of(aid)
+    if stage:
+        stage.set_connected(aid, False)
+        await _push_stage(stage)
     # Don't drop them yet — a refresh or network blip signs back in within
     # seconds and _sign_in cancels this.
     _cancel_grace(aid)
@@ -400,6 +406,10 @@ async def _sign_in(ws: WebSocket, account: dict, token: str) -> None:
     if route:
         route.set_connected(aid, True)
         await _push_route(route)
+    stage = _stage_of(aid)                    # back in the ring
+    if stage:
+        stage.set_connected(aid, True)
+        await _push_stage(stage)
 
     await _push_friends(aid)
     await _push_party(parties.ensure(aid))
@@ -413,6 +423,7 @@ async def _signout(ws: WebSocket, _msg: dict) -> None:
     await _depart(aid)
     await _leave_roles(aid)
     await _leave_route(aid)
+    await _leave_stage(aid)
     await _leave_party_for_good(aid)
     manager.unbind_player(aid)
     accounts.mark_seen(aid)
@@ -476,7 +487,7 @@ async def _buy(ws: WebSocket, msg: dict) -> None:
 def _status(aid: str) -> str:
     if not manager.get_ws(aid):
         return "offline"
-    match = _roles_of(aid) or _route_of(aid)
+    match = _roles_of(aid) or _route_of(aid) or _stage_of(aid)
     if match and not match.finished:
         return "in_game"
     game = room_manager.get_room_for_player(aid)
@@ -661,7 +672,7 @@ async def _party_start(ws: WebSocket, _msg: dict) -> None:
         if not manager.get_ws(m):
             raise PartyError(f"{name} is offline.")
         seated = room_manager.get_room_for_player(m)
-        match = _roles_of(m) or _route_of(m)
+        match = _roles_of(m) or _route_of(m) or _stage_of(m)
         if (seated and seated.status.value == "playing") or (match and not match.finished):
             raise PartyError(f"{name} is still in a game.")
     for m in p.members:                       # leave any finished table first
@@ -673,6 +684,11 @@ async def _party_start(ws: WebSocket, _msg: dict) -> None:
         if _route_of(m):
             await _leave_route(m)
             await _to(m, "route_left")
+        if _stage_of(m):
+            await _leave_stage(m)
+            await _to(m, "stage_left")
+    if p.game == "stage":
+        return await _start_stage(p)
     if p.game == "roles":
         return await _start_roles(p)
     if p.game == "route":
@@ -1224,6 +1240,164 @@ async def _route_leave(ws: WebSocket, _msg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Ring Clash (core/stage.py): everyone in the party fights at once, in real time
+# ---------------------------------------------------------------------------
+
+STAGE_TICK_S = 0.05          # the fight's clock: 20 ticks a second, a snapshot to everyone after each
+STAGE_STALL_S = 2.0          # a viewer whose snapshots back up this long gets the computer fighting for them
+stage_matches: Dict[str, StageMatch] = {}
+stage_seat: Dict[str, str] = {}              # account id -> the match they're fighting in
+_stage_tasks: Dict[str, asyncio.Task] = {}
+_stage_sending: Dict[str, tuple] = {}        # account id -> (its snapshot send in flight, when it began)
+_stage_stalled: set = set()                  # accounts the computer took over because their sends backed up
+
+
+def _stage_of(aid: Optional[str]) -> Optional[StageMatch]:
+    mid = stage_seat.get(aid) if aid else None
+    return stage_matches.get(mid) if mid else None
+
+
+def _stage_people(match: StageMatch, exclude: Optional[str] = None) -> list:
+    """Humans still in this ring; someone who left gets none of its messages."""
+    return [f.id for f in match.fighters if not f.bot and stage_seat.get(f.id) == match.id and f.id != exclude]
+
+
+def _pay_stage(match: StageMatch) -> None:
+    """Coins and stats for each human as soon as their place is fixed (casual: no rank points)."""
+    places = {s["id"]: s["place"] for s in match.standings()}
+    for fid in match.newly_placed():
+        if fid in accounts.accounts:
+            match.rewards[fid] = accounts.record_game(fid, places[fid], len(match.fighters), False,
+                                                      match.fighter(fid).left)
+
+
+def _stage_send(match: StageMatch, aid: str) -> None:
+    """The latest snapshot to one viewer, never waiting on their connection: while the last one is still
+    on its way (a slow or silent phone) this frame is skipped, as snapshots are full state. Backed up for
+    STAGE_STALL_S, the computer fights for them until a send gets through again."""
+    busy = _stage_sending.get(aid)
+    if busy and not busy[0].done():
+        if time.monotonic() - busy[1] > STAGE_STALL_S and aid not in _stage_stalled and not match.finished:
+            _stage_stalled.add(aid)
+            match.set_connected(aid, False)
+        return
+    task = asyncio.create_task(_to(aid, "stage_state", state=match.state_for(aid)))
+    _stage_sending[aid] = (task, time.monotonic())
+
+    def through(t: asyncio.Task) -> None:
+        if aid in _stage_stalled and not t.cancelled() and t.exception() is None:
+            _stage_stalled.discard(aid)
+            if _stage_of(aid) is match and manager.get_ws(aid) and not match.finished:
+                match.set_connected(aid, True)
+    task.add_done_callback(through)
+
+
+async def _push_stage(match: StageMatch) -> None:
+    _pay_stage(match)
+    for aid in _stage_people(match):
+        _stage_send(match, aid)
+
+
+async def _stage_results(match: StageMatch, aid: str) -> None:
+    """The final snapshot, coins and profile for one viewer, after whatever is still on its way to them:
+    a stuck phone only ever holds up its own results."""
+    busy = _stage_sending.get(aid)
+    if busy and not busy[0].done():
+        await asyncio.wait([busy[0]])
+    await _to(aid, "stage_state", state=match.state_for(aid))
+    await _to(aid, "game_rewards", rewards=match.rewards.get(aid))
+    await _push_profile(aid)
+    await _presence_changed(aid)
+
+
+async def _start_stage(p) -> None:
+    fighters = [Fighter(id=m, name=accounts.accounts[m]["display_name"],
+                        character=accounts.accounts[m]["equipped"]["character"]) for m in p.members]
+    if len(fighters) == 1:                   # alone: a computer opponent
+        fighters.append(Fighter(id=f"bot-{uuid.uuid4().hex[:8]}", name=random.choice(BOT_NAMES),
+                                character=random.choice(BOT_CHARACTERS), bot=True))
+    random.shuffle(fighters)                 # who starts in which corner
+    # ponytail: matches live in memory only; a server restart mid-match ends it
+    match = StageMatch(fighters)
+    stage_matches[match.id] = match
+    for m in p.members:
+        stage_seat[m] = match.id
+    p.ready.clear()
+    log.info("Stage match %s started for party %s (%d fighters)", match.id, p.id, len(fighters))
+    _stage_tasks[match.id] = asyncio.create_task(_drive_stage(match))
+    await _push_stage(match)
+    await _push_party(p)
+    for m in p.members:
+        await _presence_changed(m)
+
+
+async def _drive_stage(match: StageMatch) -> None:
+    """The fight's clock: ticks it 20 times a second, pushes every tick, sends the results at the end."""
+    try:
+        while not match.finished:
+            await asyncio.sleep(STAGE_TICK_S)
+            if match.tick():
+                await _push_stage(match)
+        _pay_stage(match)
+        for aid in _stage_people(match):
+            asyncio.create_task(_stage_results(match, aid))
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _stage_tasks.pop(match.id, None)
+
+
+async def _leave_stage(aid: str) -> None:
+    """Out of the ring: mid-match it's a forfeit; the last human out closes it."""
+    match = _stage_of(aid)
+    if not match:
+        return
+    del stage_seat[aid]
+    _stage_stalled.discard(aid)
+    busy = _stage_sending.pop(aid, None)
+    if busy:
+        busy[0].cancel()
+    if not match.finished:
+        match.leave(aid)
+    if _stage_people(match):
+        await _push_stage(match)             # the clock task sends the results if that ended it
+        return
+    _pay_stage(match)
+    task = _stage_tasks.pop(match.id, None)
+    if task:
+        task.cancel()
+    stage_matches.pop(match.id, None)
+
+
+# Inputs race with leaving and with the match ending (the pad lets go of its keys as it closes):
+# from someone no longer in a ring they're simply dropped, never an error.
+
+async def _stage_input(ws: WebSocket, msg: dict) -> None:
+    """What you hold: a direction to walk (or none), the guard, and the way you look (first person)."""
+    aid = manager.get_player_id(ws)
+    match = _stage_of(aid)
+    if match:
+        match.set_input(aid, msg.get("move"), msg.get("guard", False), msg.get("yaw"))
+
+
+async def _stage_act(ws: WebSocket, msg: dict) -> None:
+    """A button press: jab, cross or roll (the next tick's snapshot shows it)."""
+    aid = manager.get_player_id(ws)
+    match = _stage_of(aid)
+    if match:
+        match.act(aid, msg.get("act"))
+
+
+async def _stage_leave(ws: WebSocket, _msg: dict) -> None:
+    aid = manager.get_player_id(ws)
+    await _leave_stage(aid)
+    await _send(ws, "stage_left")
+    await _push_profile(aid)
+    await _push_party(parties.of(aid))
+    await _presence_changed(aid)
+
+
+# ---------------------------------------------------------------------------
 # Handler tables
 # ---------------------------------------------------------------------------
 
@@ -1242,5 +1416,6 @@ HANDLERS = {
     "call_uno": _call_uno, "catch_uno": _catch_uno, "challenge_wild4": _challenge_wild4,
     "roles_pick": _roles_pick, "roles_aim": _roles_aim, "roles_guess": _roles_guess, "roles_leave": _roles_leave,
     "route_throw": _route_throw, "route_move": _route_move, "route_leave": _route_leave,
+    "stage_input": _stage_input, "stage_act": _stage_act, "stage_leave": _stage_leave,
     "chat": _chat, "look": _look, "leave_room": _leave_room, "rematch": _rematch, "kick_player": _kick_player,
 }

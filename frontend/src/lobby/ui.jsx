@@ -173,6 +173,74 @@ export function RouteArt() {
   )
 }
 
+/** Ring Clash: a ring from above, three ropes, a warm and a cool corner, an impact burst in the middle. */
+export function StageLogo({ size = 36 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
+      <rect x="4" y="4" width="32" height="32" rx="2" fill="#2b3c86" stroke="#10142e" strokeWidth="1.4" />
+      {[6.5, 9, 11.5].map((d) => (
+        <rect key={d} x={d} y={d} width={40 - 2 * d} height={40 - 2 * d} fill="none" stroke="#f1f1f4" strokeOpacity={0.85} strokeWidth=".9" />
+      ))}
+      {[[5, 5, '#e2433f'], [35, 5, '#2f7cf0'], [35, 35, '#e2433f'], [5, 35, '#2f7cf0']].map(([x, y, c]) => (
+        <circle key={`${x}${y}`} cx={x} cy={y} r="3" fill={c} stroke="#10142e" strokeWidth="1" />
+      ))}
+      <path d="M20 13 L22 18 L27 17 L23.5 20.5 L27 24 L22 23 L20 28 L18 23 L13 24 L16.5 20.5 L13 17 L18 18 Z" fill="#ffc53d" stroke="#6b4706" strokeWidth=".9" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/** Game-picker art for Ring Clash: the ring in perspective under a spotlight, two fighters squaring up. */
+export function StageArt() {
+  const id = useId().replace(/:/g, '')
+  const fighter = (x, flip, c) => (
+    <g transform={`translate(${x} 66) scale(${flip} 1)`}>
+      <ellipse cx="0" cy="25" rx="9" ry="2.6" fill="#000" opacity=".35" />
+      <path d="M-4 24 L-3 8 L3 8 L4 24" stroke={c} strokeWidth="4" strokeLinecap="round" fill="none" />
+      <rect x="-6" y="-8" width="12" height="17" rx="4" fill={c} />
+      <circle cx="0" cy="-13" r="5" fill="#f0c9a0" />
+      <path d="M5 -4 L13 -8" stroke={c} strokeWidth="4" strokeLinecap="round" />
+      <circle cx="14" cy="-8.5" r="3.6" fill="#e2433f" />
+      <path d="M-5 -3 L2 -9" stroke={c} strokeWidth="4" strokeLinecap="round" />
+      <circle cx="3" cy="-10" r="3.4" fill="#e2433f" />
+    </g>
+  )
+  return (
+    <svg className="lb-gart" viewBox="0 0 240 120" aria-hidden="true">
+      <defs>
+        <radialGradient id={`${id}l`} cx="50%" cy="10%" r="80%">
+          <stop offset="0" stopColor="#3a3f7a" />
+          <stop offset="1" stopColor="#06071a" />
+        </radialGradient>
+        <linearGradient id={`${id}b`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff4e0" stopOpacity=".35" />
+          <stop offset="1" stopColor="#fff4e0" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="120" fill={`url(#${id}l)`} />
+      <path d="M96 0 L144 0 L196 104 L44 104 Z" fill={`url(#${id}b)`} />
+      <path d="M52 100 L82 52 L158 52 L188 100 Z" fill="#2b3c86" stroke="#10142e" strokeWidth="1.5" />
+      <path d="M52 100 L188 100 L188 108 L52 108 Z" fill="#10142e" />
+      <path d="M52 103 L188 103" stroke="#ffc53d" strokeWidth="1.5" />
+      {[8, 15, 22].map((h) => (
+        <g key={h} stroke="#f1f1f4" strokeOpacity=".9" strokeWidth="1.3" fill="none">
+          <path d={`M82 ${52 - h} L158 ${52 - h}`} />
+          <path d={`M52 ${100 - h} L82 ${52 - h}`} />
+          <path d={`M188 ${100 - h} L158 ${52 - h}`} />
+        </g>
+      ))}
+      {[[82, 52, '#2f7cf0'], [158, 52, '#e2433f'], [52, 100, '#e2433f'], [188, 100, '#2f7cf0']].map(([x, y, c]) => (
+        <g key={`${x}${y}`}>
+          <path d={`M${x} ${y} L${x} ${y - 26}`} stroke="#9aa3b8" strokeWidth="3" />
+          <rect x={x - 3} y={y - 22} width="6" height="14" rx="1.5" fill={c} />
+        </g>
+      ))}
+      {fighter(104, 1, '#4fd8ff')}
+      {fighter(136, -1, '#ffc53d')}
+      <path d="M120 44 L123 51 L130 50 L125 55 L130 60 L123 59 L120 66 L117 59 L110 60 L115 55 L110 50 L117 51 Z" fill="#fff" opacity=".9" />
+    </svg>
+  )
+}
+
 export function RolesLogo({ size = 36 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">

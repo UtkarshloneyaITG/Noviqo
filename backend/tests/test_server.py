@@ -67,7 +67,7 @@ def befriend(a, b, a_id, b_name):
         pass
 
 
-def party_up(a, b, b_id):
+def party_up(a, b, b_id, size=2):
     a.send_json({"type": "party_invite", "id": b_id})
     invite = recv(b, "party_invite")
     assert invite["expires_in"] == 30                    # the client counts this down
@@ -75,7 +75,7 @@ def party_up(a, b, b_id):
     b.send_json({"type": "party_ready", "ready": True})
     while True:
         p = recv(a, "party")["party"]
-        if len(p["members"]) == 2 and all(m["ready"] for m in p["members"]):
+        if len(p["members"]) == size and all(m["ready"] for m in p["members"]):
             return
 
 
@@ -438,12 +438,12 @@ def test_party_emotes_need_their_pack(client):
         assert recv(a, "emote")["emote"] == "dance"
 
 
-def test_shrug_is_a_basic_emote_everyone_has(client):
+def test_chat_is_a_basic_emote_everyone_has(client):
     with client.websocket_connect("/ws") as a:
         signup(a)
-        assert {"id": "shrug", "pack": "emotes:basic"} in recv(a, "catalog")["emotes"]
-        a.send_json({"type": "emote", "emote": "shrug"})
-        assert recv(a, "emote")["emote"] == "shrug"
+        assert {"id": "chat", "pack": "emotes:basic"} in recv(a, "catalog")["emotes"]
+        a.send_json({"type": "emote", "emote": "chat"})
+        assert recv(a, "emote")["emote"] == "chat"
 
 
 def test_unknown_emotes_and_floods_are_refused(client):
@@ -452,7 +452,7 @@ def test_unknown_emotes_and_floods_are_refused(client):
         a.send_json({"type": "emote", "emote": ["wave"]})
         assert recv(a, "error")["message"] == "Unknown emote."
         a.send_json({"type": "emote", "emote": "wave"})
-        a.send_json({"type": "emote", "emote": "cheer"})                 # inside EMOTE_GAP_S: dropped
+        a.send_json({"type": "emote", "emote": "chat"})                  # inside EMOTE_GAP_S: dropped
         assert [m["emote"] for m in drain(a) if m["type"] == "emote"] == ["wave"]
 
 
@@ -652,3 +652,161 @@ def test_roles_table_chat_and_leaving(client):
         recv(a, "roles_left")
         assert match.id not in main.role_matches                              # last human out closes it
 
+
+
+# ── Ring Clash ───────────────────────────────────────────────────────────
+
+def stage_state(ws, until=lambda st: True):
+    while True:
+        st = recv(ws, "stage_state")["state"]
+        if until(st):
+            return st
+
+
+def start_stage(client, stack, friends=0):
+    """A party (leader + `friends`) starts a Ring Clash match."""
+    socks = [stack.enter_context(client.websocket_connect("/ws")) for _ in range(friends + 1)]
+    signed = [signup(ws) for ws in socks]
+    ids = [s[0] for s in signed]
+    for n, (ws, aid) in enumerate(zip(socks[1:], ids[1:]), 2):
+        befriend(socks[0], ws, ids[0], main.accounts.accounts[aid]["username"])
+        party_up(socks[0], ws, aid, size=n)
+    socks[0].send_json({"type": "party_set", "game": "stage"})
+    socks[0].send_json({"type": "party_start"})
+    states = [stage_state(ws) for ws in socks]
+    return socks, ids, [s[1] for s in signed], states, main._stage_of(ids[0])
+
+
+def live(match):
+    match.phase, match.phase_until = "fight", float("inf")
+
+
+def test_stage_alone_gets_a_computer_opponent(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), _, (st,), match = start_stage(client, stack)
+        assert len(st["fighters"]) == 2 and sum(f["bot"] for f in st["fighters"]) == 1
+        assert st["fighters"][st["you"]]["id"] == a_id
+
+
+def test_stage_party_of_three_has_no_computer(client):
+    with ExitStack() as stack:
+        socks, ids, _, states, match = start_stage(client, stack, friends=2)
+        assert len(states[0]["fighters"]) == 3 and not any(f["bot"] for f in states[0]["fighters"])
+
+
+def test_stage_input_moves_the_fighter(client):
+    with ExitStack() as stack:
+        (a,), (a_id,), _, _, match = start_stage(client, stack)
+        me = match.fighter(a_id)
+        me.x = me.z = 0.0
+        for f in match.fighters:
+            if f.bot:
+                f.bot, f.x, f.z = False, 2.5, 2.5         # keep the computer out of the way
+        live(match)
+        a.send_json({"type": "stage_input", "move": [1, 0], "guard": False})
+        st = stage_state(a, lambda s: s["fighters"][s["you"]]["x"] > 0.3)
+        assert st["fighters"][st["you"]]["state"] == "walk"
+
+
+def test_stage_bad_messages_are_refused(client):
+    with ExitStack() as stack:
+        (a,), _, _, _, match = start_stage(client, stack)
+        a.send_json({"type": "stage_input", "move": ["a", 1], "guard": False})
+        assert recv(a, "error")["message"]
+        a.send_json({"type": "stage_act", "act": "kick"})
+        assert recv(a, "error")["message"]
+        stage_state(a)                                    # still ticking
+
+
+def test_stage_disconnect_hands_to_the_computer_and_back(client, monkeypatch):
+    monkeypatch.setattr(main, "GRACE_SECONDS", 5)
+    with client.websocket_connect("/ws") as a:
+        a_id, _, _ = signup(a)
+        with client.websocket_connect("/ws") as b:
+            b_id, b_token, b_name = signup(b)
+            befriend(a, b, a_id, b_name)
+            party_up(a, b, b_id)
+            a.send_json({"type": "party_set", "game": "stage"})
+            a.send_json({"type": "party_start"})
+            stage_state(b)
+        match = main._stage_of(a_id)                      # b's phone dropped
+        st = stage_state(a, lambda s: s["fighters"][1 - s["you"]]["auto"])
+        assert not st["fighters"][st["you"]]["auto"]
+        with client.websocket_connect("/ws") as back:
+            back.send_json({"type": "auth", "token": b_token})
+            st = stage_state(back)
+            assert st["fighters"][st["you"]]["id"] == b_id and not match.fighter(b_id).auto
+
+
+def test_stage_leave_forfeits_and_pays_the_winner(client):
+    with ExitStack() as stack:
+        (a, b), (a_id, b_id), _, _, match = start_stage(client, stack, friends=1)
+        live(match)
+        b.send_json({"type": "stage_leave"})
+        recv(b, "stage_left")
+        st = stage_state(a, lambda s: s["phase"] == "over")
+        assert st["standings"][0]["id"] == a_id
+        assert recv(a, "game_rewards")["rewards"]["coins"] > 0
+
+
+def test_party_cannot_start_while_someone_is_fighting(client):
+    with ExitStack() as stack:
+        (a, b), (a_id, b_id), _, _, match = start_stage(client, stack, friends=1)
+        b.send_json({"type": "party_ready", "ready": True})
+        a.send_json({"type": "party_start"})
+        assert "still in a game" in recv(a, "error")["message"]
+
+
+# ── Ring Clash: review fixes ─────────────────────────────────────────────
+
+import asyncio
+from core.stage import Fighter as StageFighter, StageMatch as StageMatchCls
+
+
+def _two_in_a_ring():
+    match = StageMatchCls([StageFighter("ra", "A", "char:m-Casual"), StageFighter("rb", "B", "char:m-Casual")])
+    main.stage_matches[match.id] = match
+    main.stage_seat["ra"] = main.stage_seat["rb"] = match.id
+    return match
+
+
+@pytest.mark.asyncio
+async def test_a_stuck_viewer_never_stalls_the_fight(monkeypatch):
+    """A phone that stops reading (half-open socket) must not hold up anyone else's snapshots."""
+    match = _two_in_a_ring()
+    got = []
+
+    async def fake_to(aid, type_, **kw):
+        if aid == "rb":
+            await asyncio.Event().wait()                 # rb's phone went silent: this send never finishes
+        got.append((aid, type_))
+
+    monkeypatch.setattr(main, "_to", fake_to)
+    monkeypatch.setattr(main, "STAGE_STALL_S", 0.05)
+    try:
+        for _ in range(5):
+            await asyncio.wait_for(main._push_stage(match), 0.5)
+            await asyncio.sleep(0)
+        assert got.count(("ra", "stage_state")) == 5
+        await asyncio.sleep(0.1)
+        await asyncio.wait_for(main._push_stage(match), 0.5)
+        assert match.fighter("rb").auto                  # backed up too long: the computer fights for them
+        assert not match.fighter("ra").auto
+    finally:
+        for t in list(main._stage_sending.values()):
+            t[0].cancel()
+        main._stage_sending.clear()
+        main.stage_matches.pop(match.id, None)
+        main.stage_seat.pop("ra", None)
+        main.stage_seat.pop("rb", None)
+
+
+def test_stage_inputs_after_leaving_are_ignored_quietly(client):
+    """The pad lets go of its keys as it unmounts, after Leave: that must not show an error."""
+    with ExitStack() as stack:
+        (a, b), _, _, _, match = start_stage(client, stack, friends=1)
+        b.send_json({"type": "stage_leave"})
+        recv(b, "stage_left")
+        b.send_json({"type": "stage_input", "move": None, "guard": False})
+        b.send_json({"type": "stage_act", "act": "jab"})
+        assert not [m for m in drain(b) if m["type"] == "error"]

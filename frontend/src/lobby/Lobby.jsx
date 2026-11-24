@@ -5,8 +5,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../store/appStore'
-import { LOBBY_EMOTES } from '../three/world/lobbyMotion'
-import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, RolesLogo, RouteLogo, SecondsLeft, rankColor, useItemMap } from './ui'
+import { LOBBY_EMOTES } from '../three/world/clipMotion'
+import { Avatar, Crest, Coin, GameLogo, Icon, ItemArt, RolesLogo, RouteLogo, SecondsLeft, StageLogo, rankColor, useItemMap } from './ui'
 import SignIn from './SignIn'
 import Chat from './Chat'
 import { FriendsStrip, FriendsPanel, AddFriend } from './Friends'
@@ -151,6 +151,7 @@ function PlayColumn() {
   const route = party?.game === 'route' // Ang Mang Chok Chang: 1–4 people, bots fill the other seats
   const roles = party?.game === 'roles' || route // Raja Mantri Chor Sipahi too: same seating rules
   const bots = 4 - members.length
+  const stage = party?.game === 'stage' // Ring Clash: 1–5 fighters, a computer joins someone alone
 
   let start
   if (!party) {
@@ -160,11 +161,13 @@ function PlayColumn() {
       </button>
     )
   } else if (iLead) {
-    const status = roles
+    const status = stage
+      ? notReady ? `${notReady} not ready` : members.length === 1 ? 'A computer joins' : 'Everyone ready'
+      : roles
       ? members.length > 4 ? 'Seats 4 at most' : notReady ? `${notReady} not ready` : bots ? `${bots} bot${bots > 1 ? 's' : ''} fill in` : 'Everyone ready'
       : members.length < 2 ? 'Invite a friend' : notReady ? `${notReady} not ready` : 'Everyone ready'
     start = (
-      <button className="lb-start" disabled={(roles ? members.length > 4 : members.length < 2) || notReady > 0} onClick={() => send('party_start')}>
+      <button className="lb-start" disabled={(stage ? false : roles ? members.length > 4 : members.length < 2) || notReady > 0} onClick={() => send('party_start')}>
         Start
         <small>
           Party of {members.length}
@@ -195,16 +198,18 @@ function PlayColumn() {
         <div className="lb-panel lb-mode">
           <div className="mrow">
             <div className="glogo">
-              {route ? <RouteLogo /> : roles ? <RolesLogo /> : <GameLogo />}
+              {stage ? <StageLogo /> : route ? <RouteLogo /> : roles ? <RolesLogo /> : <GameLogo />}
             </div>
-            <div className={`gname ${roles ? 'gname--long' : ''}`}>{route ? 'Ang Mang Chok Chang' : roles ? 'Raja Mantri Chor Sipahi' : 'UNO'}</div>
+            <div className={`gname ${roles ? 'gname--long' : ''}`}>{stage ? 'Ring Clash' : route ? 'Ang Mang Chok Chang' : roles ? 'Raja Mantri Chor Sipahi' : 'UNO'}</div>
             {iLead && (
               <button className="chg" onClick={() => openPanel('games')}>
                 Change game
               </button>
             )}
           </div>
-          {route ? (
+          {stage ? (
+            <p className="lb-roles-note">Everyone fights at once · last one standing wins the round</p>
+          ) : route ? (
             <>
               <p className="lb-roles-note">4 seats · 4 pawns each · bots fill empty seats</p>
               <div className="lb-seg" role="radiogroup" aria-label="Rules">
@@ -274,7 +279,7 @@ function PlayColumn() {
           )}
           <div className="pstat">
             <span>
-              {roles ? (
+              {roles || stage ? (
                 'Casual: coins by final place'
               ) : party.mode === 'ranked' ? (
                 nextLabel ? (

@@ -67,8 +67,8 @@ SLOT_OF_KIND = {"character": "character", "card_back": "card_back", "felt": "fel
 
 # Lobby emotes (your character acts them out on its pedestal) → the emote pack that unlocks each.
 LOBBY_EMOTES: Dict[str, str] = {
-    **dict.fromkeys(["wave", "cheer", "thumbs_up", "clap", "laugh", "think", "shrug"], "emotes:basic"),
-    **dict.fromkeys(["dance", "salute", "bow", "flex"], "emotes:party"),
+    **dict.fromkeys(["wave", "chat", "jump", "box", "magic", "push", "sprint"], "emotes:basic"),
+    **dict.fromkeys(["dance", "slash", "roll", "faint"], "emotes:party"),
 }
 DEFAULT_EQUIPPED = {"character": "char:m-Casual", "card_back": "back:classic", "felt": "felt:green", "lobby": "lobby:rooftop",
                     "entry": "entry:classic"}
